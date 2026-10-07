@@ -167,8 +167,18 @@ if (count($officialNameParts) >= 2) {
               <h3 id="residentFormTitle"><i class="fa-solid fa-user-plus"></i> Add New Resident</h3>
               <button class="close-card-btn" id="closeResidentForm"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <form id="residentFormEl">
+            <!-- Wizard progress -->
+            <div class="wizard-progress" id="residentWizardProgress">
+              <div class="wz-step" data-step="1"><span class="wz-dot">1</span><span class="wz-label">Account</span></div>
+              <div class="wz-step" data-step="2"><span class="wz-dot">2</span><span class="wz-label">Household</span></div>
+              <div class="wz-step" data-step="3"><span class="wz-dot">3</span><span class="wz-label">Profiling</span></div>
+            </div>
+
+            <form id="residentFormEl" data-mode="create">
             <input type="hidden" name="resident_id" />
+
+            <!-- ── Step 1: Account ── -->
+            <div class="wizard-step" data-step="1">
             <div class="form-2col">
               <div class="field"><label>First Name</label><input type="text" name="fname" class="form-input" required /></div>
               <div class="field"><label>Last Name</label><input type="text" name="lname" class="form-input" required /></div>
@@ -179,13 +189,62 @@ if (count($officialNameParts) >= 2) {
             </div>
             <div class="field"><label>Address</label><input type="text" name="address" class="form-input" required /></div>
             <div class="field" style="margin-top:12px;"><label id="residentPasswordLabel">Temporary Password</label><input type="password" name="password" class="form-input" required /></div>
+            </div>
 
-            <!-- ── Collapsible Profiling Information ── -->
-            <details class="profiling-section" id="profilingSection">
-              <summary class="profiling-toggle"><i class="fa-solid fa-id-card-clip"></i> Profiling Information <span class="opt-label">(optional)</span></summary>
+            <!-- ── Step 2: Household ── -->
+            <div class="wizard-step" data-step="2" hidden>
+              <p class="wz-help">How should this resident be linked to a household?</p>
+              <div class="wz-household-choice">
+                <label class="wz-choice">
+                  <input type="radio" name="household_mode" value="new" checked />
+                  <span><strong>Create a new household</strong><small>This resident becomes the household head.</small></span>
+                </label>
+                <label class="wz-choice">
+                  <input type="radio" name="household_mode" value="link" />
+                  <span><strong>Link to an existing household</strong><small>Choose a household from the list below.</small></span>
+                </label>
+                <label class="wz-choice">
+                  <input type="radio" name="household_mode" value="skip" />
+                  <span><strong>Skip for now</strong><small>Link this resident to a household later.</small></span>
+                </label>
+              </div>
 
-              <fieldset class="profiling-group">
-                <legend>Household &amp; Demographics</legend>
+              <div class="wz-household-pane" data-pane="new">
+                <div class="form-2col">
+                  <div class="field"><label>Household Purok / Zone</label><input type="text" name="household_purok_zone" class="form-input" placeholder="e.g. Purok 3" /></div>
+                  <div class="field" id="residentHouseholdSizeField"><label>Household Size</label><input type="number" name="household_size" class="form-input" min="1" value="1" /></div>
+                </div>
+                <div class="field" style="margin-top:8px;"><label>Household Address <span class="opt-label">(defaults to resident address)</span></label><input type="text" name="household_address" class="form-input" /></div>
+              </div>
+
+              <div class="wz-household-pane" data-pane="link" hidden>
+                <div class="field"><label>Existing Household</label>
+                  <select name="household_id" class="form-input" id="residentHouseholdSelect">
+                    <option value="">— Select household —</option>
+                  </select>
+                </div>
+                <div class="field" style="margin-top:8px;"><label>Relationship to Head</label><input type="text" name="relationship_to_household_head" class="form-input" placeholder="e.g. Spouse, Son, Daughter" /></div>
+              </div>
+            </div>
+
+            <!-- ── Step 3: Profiling ── -->
+            <div class="wizard-step" data-step="3" hidden>
+              <div class="wz-profiling-choice" id="residentProfilingChoice">
+                <p class="wz-help">Complete the resident's profiling information now, or defer it.</p>
+                <div class="wz-choice-row">
+                  <label class="wz-choice">
+                    <input type="radio" name="profile_now" value="1" checked />
+                    <span><strong>Complete Now</strong><small>Fill in demographics and livelihood details.</small></span>
+                  </label>
+                  <label class="wz-choice">
+                    <input type="radio" name="profile_now" value="0" />
+                    <span><strong>Later</strong><small>Keep the resident unprofiled for now.</small></span>
+                  </label>
+                </div>
+              </div>
+
+              <fieldset class="profiling-group" data-profile-fields>
+                <legend>Demographics</legend>
                 <div class="form-2col">
                   <div class="field"><label>Birthdate</label><input type="date" name="birthdate" class="form-input" /></div>
                   <div class="field"><label>Civil Status</label>
@@ -200,10 +259,9 @@ if (count($officialNameParts) >= 2) {
                 </div>
                 <div class="form-2col">
                   <div class="field"><label>Purok / Zone</label><input type="text" name="purok_zone" class="form-input" placeholder="e.g. Purok 3" /></div>
-                  <div class="field"><label>Household Size</label><input type="number" name="household_size" class="form-input" min="1" value="1" /></div>
-                </div>
-                <div class="form-2col">
                   <div class="field"><label>No. of Dependents</label><input type="number" name="number_of_dependents" class="form-input" min="0" value="0" /></div>
+                </div>
+                <div class="form-2col" id="residentHouseholdSizeSlot">
                   <div class="field"><label>Years of Residency</label><input type="number" name="years_of_residency" class="form-input" min="0" value="0" /></div>
                 </div>
                 <div class="form-2col profiling-checkboxes">
@@ -214,7 +272,7 @@ if (count($officialNameParts) >= 2) {
                 </div>
               </fieldset>
 
-              <fieldset class="profiling-group">
+              <fieldset class="profiling-group" data-profile-fields>
                 <legend>Livelihood &amp; Skills</legend>
                 <div class="form-2col">
                   <div class="field"><label>Educational Attainment</label>
@@ -268,11 +326,14 @@ if (count($officialNameParts) >= 2) {
                   <label class="checkbox-label"><input type="checkbox" name="has_drivers_license" value="1" /> Has Driver's License</label>
                 </div>
               </fieldset>
-            </details>
+            </div>
 
-            <div class="form-actions">
-              <button type="submit" class="btn-submit-form" id="residentFormSubmitBtn">Save Resident</button>
+            <div class="form-actions wizard-actions">
               <button type="button" class="btn-cancel-form" id="cancelResidentForm">Cancel</button>
+              <span class="wizard-spacer"></span>
+              <button type="button" class="btn-cancel-form" id="residentWizardBack" hidden><i class="fa-solid fa-arrow-left"></i> Back</button>
+              <button type="button" class="btn-submit-form" id="residentWizardNext">Next <i class="fa-solid fa-arrow-right"></i></button>
+              <button type="submit" class="btn-submit-form" id="residentFormSubmitBtn" hidden>Save Resident</button>
             </div>
             </form>
           </div>
@@ -530,6 +591,25 @@ if (count($officialNameParts) >= 2) {
             <button type="button" class="btn-action view" id="vulnerabilityPrevBtn"><i class="fa-solid fa-chevron-left"></i> Prev</button>
             <span id="vulnerabilityPageLabel">Page 1 of 1</span>
             <button type="button" class="btn-action view" id="vulnerabilityNextBtn">Next <i class="fa-solid fa-chevron-right"></i></button>
+          </div>
+        </div>
+        <div class="card vulnerability-registry-card household-registry-card">
+          <div class="registry-header">
+            <div>
+              <h3><i class="fa-solid fa-house-user"></i> Household Registry</h3>
+              <p>One row per household. Households marked <strong>Unprofiled</strong> have no questionnaire data yet and cannot be assessed.</p>
+            </div>
+          </div>
+          <div class="table-toolbar">
+            <select id="householdPurokFilter" class="table-filter" aria-label="Filter household registry by Purok">
+              <option value="all">All Puroks</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table vulnerability-registry-table">
+              <thead><tr><th>Household</th><th>Head</th><th>Purok</th><th>Size</th><th>Profile Status</th><th>MPI</th><th>Income Status</th></tr></thead>
+              <tbody id="householdRegistryBody"></tbody>
+            </table>
           </div>
         </div>
         </div>
