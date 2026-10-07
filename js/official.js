@@ -515,7 +515,10 @@ function showAiView(view) {
   document.querySelectorAll('[data-ai-subview]').forEach(panel => {
     panel.hidden = panel.dataset.aiSubview !== view;
   });
-  if (view === 'registry') rerollRegistryOrder();
+  if (view === 'registry') {
+    rerollRegistryOrder();
+    loadHouseholdRegistry().catch(() => { /* table keeps its last render */ });
+  }
 }
 
 function initAiHub() {
@@ -1263,6 +1266,89 @@ async function refreshDashboard() {
   renderDashActivity();
 }
 
+// ── HOUSEHOLDS ────────────────────────────
+let HOUSEHOLDS = [];
+let HOUSEHOLD_REGISTRY = [];
+const PROFILE_FIELD_KEYS = [
+  'birthdate', 'civil_status', 'purok_zone', 'number_of_dependents',
+  'is_household_head', 'is_solo_parent', 'is_pwd', 'is_4ps_member', 'years_of_residency',
+  'educational_attainment', 'employment_status', 'occupation', 'monthly_income_bracket',
+  'skills', 'work_experience_years', 'training_certifications', 'work_availability',
+  'has_drivers_license'
+];
+
+async function loadHouseholds() {
+  const data = await fetchJson(`${API_BASE}/households/list.php`);
+  HOUSEHOLDS = data.households || [];
+  const select = document.getElementById('residentHouseholdSelect');
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = '<option value="">— Select household —</option>'
+    + HOUSEHOLDS.map(h => {
+      const label = `${h.code} — ${h.head_name || 'No head yet'}${h.purok_zone ? ` (${h.purok_zone})` : ''}`;
+      return `<option value="${h.id}">${escapeHtml(label)}</option>`;
+    }).join('');
+  if (current && HOUSEHOLDS.some(h => String(h.id) === current)) select.value = current;
+}
+
+async function loadHouseholdRegistry() {
+  if (!document.getElementById('householdRegistryBody')) return;
+  const data = await fetchJson(`${API_BASE}/households/registry.php`);
+  HOUSEHOLD_REGISTRY = data.households || [];
+  renderHouseholdRegistry();
+}
+
+function householdProfileBadge(h) {
+  if (h.profile_status === 'complete') return '<span class="status-badge status-verified">Complete</span>';
+  if (h.profile_status === 'in_progress') return `<span class="status-badge status-processing">In progress · ${Number(h.profile_completeness) || 0}%</span>`;
+  return '<span class="status-badge status-pending">Unprofiled</span>';
+}
+
+function householdMpiBadge(h) {
+  if (h.mpi_score === null || h.mpi_score === undefined) return '<span class="ai-tier ai-tier-none">Not assessed</span>';
+  const tier = h.mpi_status === 'poor' ? 'critical' : (h.mpi_status === 'not_poor' ? 'low' : 'moderate');
+  const label = h.mpi_status === 'poor' ? 'Poor' : (h.mpi_status === 'not_poor' ? 'Not poor' : 'Incomplete');
+  return `<span class="ai-tier ai-tier-${tier}">${label} (<span class="mpi-score">${Number(h.mpi_score).toFixed(4)}</span>)</span>`;
+}
+
+function householdIncomeBadge(h) {
+  if (h.income_poverty_status === 'below') return '<span class="status-badge status-open">Below threshold</span>';
+  if (h.income_poverty_status === 'at_or_above') return '<span class="status-badge status-verified">At / above</span>';
+  return '<span class="status-badge status-completed">Cannot determine</span>';
+}
+
+function renderHouseholdRegistry() {
+  const tbody = document.getElementById('householdRegistryBody');
+  const filter = document.getElementById('householdPurokFilter');
+  if (!tbody || !filter) return;
+
+  const puroks = [...new Set(HOUSEHOLD_REGISTRY.map(h => h.purok_zone).filter(Boolean))].sort();
+  const selected = filter.value;
+  filter.innerHTML = '<option value="all">All Puroks</option>'
+    + puroks.map(purok => `<option value="${escapeAttribute(purok)}">${escapeHtml(purok)}</option>`).join('');
+  filter.value = puroks.includes(selected) ? selected : 'all';
+
+  const rows = HOUSEHOLD_REGISTRY.filter(h => filter.value === 'all' || h.purok_zone === filter.value);
+  tbody.innerHTML = rows.length ? rows.map(h => `<tr class="vulnerability-registry-entry">
+      <td><code>${escapeHtml(h.code)}</code></td>
+      <td style="font-weight:600">${escapeHtml(h.head_name || '—')}</td>
+      <td>${escapeHtml(h.purok_zone || 'Not provided')}</td>
+      <td>${Number(h.household_size) || 0}</td>
+      <td>${householdProfileBadge(h)}</td>
+      <td>${householdMpiBadge(h)}</td>
+      <td>${householdIncomeBadge(h)}</td>
+    </tr>`).join('')
+    : `<tr><td colspan="7" class="registry-empty">${HOUSEHOLD_REGISTRY.length ? 'No households match this Purok.' : 'No households registered yet.'}</td></tr>`;
+}
+
+function initHouseholdRegistry() {
+  document.getElementById('householdPurokFilter')?.addEventListener('change', renderHouseholdRegistry);
+}
+
+// ── RESIDENT WIZARD ───────────────────────
+// Shared controller so openEditResidentForm() can drive the same 3-step form.
+let RESIDENT_WIZARD = null;
+
 function initResidentCreateForm() {
   const openBtn = document.getElementById('addResidentBtn');
   const closeBtn = document.getElementById('closeResidentForm');
@@ -1271,44 +1357,142 @@ function initResidentCreateForm() {
   const form = document.getElementById('residentFormEl');
   const title = document.getElementById('residentFormTitle');
   const submitBtn = document.getElementById('residentFormSubmitBtn');
+  const backBtn = document.getElementById('residentWizardBack');
+  const nextBtn = document.getElementById('residentWizardNext');
   const passwordLabel = document.getElementById('residentPasswordLabel');
   const passwordInput = form?.querySelector('input[name="password"]');
-  if (!card || !form) return;
+  const profilingChoice = document.getElementById('residentProfilingChoice');
+  // Household Size lives in step 2 for new residents. Edit mode skips step 2, so the
+  // field is moved into the step 3 demographics grid while editing and moved back on reset.
+  const sizeField = document.getElementById('residentHouseholdSizeField');
+  const sizeSlot = document.getElementById('residentHouseholdSizeSlot');
+  const sizeHome = sizeField?.parentElement || null;
+  if (!card || !form || !submitBtn || !backBtn || !nextBtn) return;
+
+  // Edit mode skips the Household step: update.php never touches household linkage.
+  const stepsFor = mode => (mode === 'edit' ? [1, 3] : [1, 2, 3]);
+  let step = 1;
+
+  const currentMode = () => form.dataset.mode || 'create';
+  const householdMode = () => form.querySelector('input[name="household_mode"]:checked')?.value || 'new';
+  const profileNow = () => currentMode() === 'edit' || form.querySelector('input[name="profile_now"]:checked')?.value !== '0';
+
+  const setStep = (n) => {
+    const steps = stepsFor(currentMode());
+    step = steps.includes(n) ? n : steps[0];
+    const idx = steps.indexOf(step);
+    form.querySelectorAll('.wizard-step').forEach(el => { el.hidden = Number(el.dataset.step) !== step; });
+    document.querySelectorAll('#residentWizardProgress .wz-step').forEach(el => {
+      const s = Number(el.dataset.step);
+      const skipped = !steps.includes(s);
+      el.classList.toggle('skipped', skipped);
+      el.classList.toggle('active', s === step);
+      el.classList.toggle('done', !skipped && steps.indexOf(s) < idx);
+    });
+    backBtn.hidden = idx === 0;
+    nextBtn.hidden = idx === steps.length - 1;
+    submitBtn.hidden = idx !== steps.length - 1;
+  };
+  const stepOffset = delta => {
+    const steps = stepsFor(currentMode());
+    const next = steps[steps.indexOf(step) + delta];
+    if (next) setStep(next);
+  };
+
+  const syncHouseholdPanes = () => {
+    const mode = householdMode();
+    form.querySelectorAll('.wz-household-pane').forEach(pane => {
+      const active = pane.dataset.pane === mode;
+      pane.hidden = !active;
+      // Disabled inputs are left out of FormData, so stale values from an unselected pane are never sent.
+      pane.querySelectorAll('input,select,textarea').forEach(input => { input.disabled = !active; });
+    });
+  };
+  const syncProfileFields = () => {
+    const enabled = profileNow();
+    form.querySelectorAll('[data-profile-fields]').forEach(fs => {
+      fs.classList.toggle('is-deferred', !enabled);
+      fs.querySelectorAll('input,select,textarea').forEach(input => { input.disabled = !enabled; });
+    });
+  };
+
+  form.querySelectorAll('input[name="household_mode"]').forEach(r => r.addEventListener('change', syncHouseholdPanes));
+  form.querySelectorAll('input[name="profile_now"]').forEach(r => r.addEventListener('change', syncProfileFields));
 
   const resetToCreateMode = () => {
     form.reset();
+    form.dataset.mode = 'create';
     form.resident_id.value = '';
     title.innerHTML = '<i class="fa-solid fa-user-plus"></i> Add New Resident';
     submitBtn.textContent = 'Save Resident';
     passwordLabel.textContent = 'Temporary Password';
     passwordInput.required = true;
     passwordInput.placeholder = '';
-    // Reset profiling section
-    const profilingSection = document.getElementById('profilingSection');
-    if (profilingSection) profilingSection.removeAttribute('open');
+    if (profilingChoice) profilingChoice.hidden = false;
+    if (sizeField && sizeHome && sizeField.parentElement !== sizeHome) sizeHome.appendChild(sizeField);
+    form.querySelector('input[name="household_mode"][value="new"]').checked = true;
+    form.querySelector('input[name="profile_now"][value="1"]').checked = true;
+    syncHouseholdPanes();
+    syncProfileFields();
+    setStep(1);
+  };
+  const enterEditMode = () => {
+    form.dataset.mode = 'edit';
+    if (profilingChoice) profilingChoice.hidden = true;
+    if (sizeField && sizeSlot) {
+      sizeSlot.appendChild(sizeField);
+      sizeField.querySelector('input').disabled = false;
+    }
+    syncProfileFields();
+    setStep(1);
   };
   const closeForm = () => {
     card.classList.remove('show');
     resetToCreateMode();
   };
 
+  RESIDENT_WIZARD = { resetToCreateMode, enterEditMode, setStep, closeForm };
+
   openBtn?.addEventListener('click', () => {
     resetToCreateMode();
     card.classList.add('show');
+    loadHouseholds().catch(() => { /* dropdown stays empty; "Skip" and "Create" still work */ });
   });
   closeBtn?.addEventListener('click', closeForm);
   cancelBtn?.addEventListener('click', closeForm);
+  backBtn.addEventListener('click', () => stepOffset(-1));
+  nextBtn.addEventListener('click', () => {
+    const visible = form.querySelector(`.wizard-step[data-step="${step}"]`);
+    const invalid = [...visible.querySelectorAll('input,select,textarea')].find(input => !input.disabled && !input.checkValidity());
+    if (invalid) { invalid.reportValidity(); return; }
+    if (step === 2 && householdMode() === 'link' && !form.household_id.value) {
+      showToastAdmin('Select a Household', 'Choose an existing household, or pick another option.');
+      form.household_id.focus();
+      return;
+    }
+    stepOffset(1);
+  });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const isEdit = currentMode() === 'edit';
     const fd = new FormData(form);
     const payload = Object.fromEntries(fd.entries());
+    const includeProfile = profileNow();
     // Checkboxes not in FormData when unchecked — default to 0
     ['is_household_head', 'is_solo_parent', 'is_pwd', 'is_4ps_member', 'has_drivers_license'].forEach(k => {
       payload[k] = fd.has(k) ? 1 : 0;
     });
-    const isEdit = payload.resident_id && String(payload.resident_id).trim() !== '';
+    if (isEdit) {
+      // update.php owns no household linkage; never send wizard-only keys from edit mode.
+      ['household_mode', 'household_id', 'household_address', 'household_purok_zone', 'relationship_to_household_head', 'profile_now'].forEach(k => delete payload[k]);
+    } else {
+      payload.profile_now = includeProfile ? 1 : 0;
+      // [Later]: strip profiling fields; household_size stays because step 2 owns it.
+      if (!includeProfile) PROFILE_FIELD_KEYS.forEach(k => delete payload[k]);
+    }
     const url = isEdit ? `${API_BASE}/residents/update.php` : `${API_BASE}/residents/create.php`;
+    submitBtn.disabled = true;
     try {
       await fetchJson(url, {
         method: 'POST',
@@ -1319,14 +1503,25 @@ function initResidentCreateForm() {
         body: JSON.stringify(payload)
       });
       closeForm();
-      await loadResidents();
-      await loadAuditLog();
+      await Promise.all([
+        loadResidents(),
+        loadAuditLog(),
+        loadHouseholdRegistry().catch(() => {})
+      ]);
       await refreshDashboard();
-      showToastAdmin(isEdit ? 'Resident Updated' : 'Resident Added', isEdit ? 'Resident record was updated successfully.' : 'New resident account was created successfully.');
+      showToastAdmin(
+        isEdit ? 'Resident Updated' : 'Resident Added',
+        isEdit ? 'Resident record was updated successfully.'
+          : (includeProfile ? 'New resident account was created.' : 'New resident account was created. Profiling was deferred.')
+      );
     } catch (err) {
       showToastAdmin(isEdit ? 'Update Failed' : 'Create Failed', err.message);
+    } finally {
+      submitBtn.disabled = false;
     }
   });
+
+  resetToCreateMode();
 }
 
 function openEditResidentForm(dbId) {
@@ -1337,8 +1532,10 @@ function openEditResidentForm(dbId) {
   const submitBtn = document.getElementById('residentFormSubmitBtn');
   const passwordLabel = document.getElementById('residentPasswordLabel');
   const passwordInput = form?.querySelector('input[name="password"]');
-  if (!resident || !card || !form || !title || !submitBtn || !passwordLabel || !passwordInput) return;
+  if (!resident || !card || !form || !title || !submitBtn || !passwordLabel || !passwordInput || !RESIDENT_WIZARD) return;
 
+  RESIDENT_WIZARD.resetToCreateMode();
+  RESIDENT_WIZARD.enterEditMode();
   form.resident_id.value = String(resident.dbId);
   form.fname.value = resident.fname;
   form.lname.value = resident.lname;
@@ -1372,11 +1569,6 @@ function openEditResidentForm(dbId) {
   if (form.training_certifications) form.training_certifications.value = resident.training_certifications || '';
   if (form.work_availability) form.work_availability.value = resident.work_availability || '';
   if (form.has_drivers_license) form.has_drivers_license.checked = !!resident.has_drivers_license;
-
-  // Auto-open profiling section if any profiling data exists
-  const hasProfilingData = resident.birthdate || resident.civil_status || resident.purok_zone || resident.occupation || resident.skills || resident.employment_status;
-  const profilingSection = document.getElementById('profilingSection');
-  if (profilingSection && hasProfilingData) profilingSection.setAttribute('open', '');
 
   card.classList.add('show');
 }
@@ -2003,11 +2195,18 @@ document.addEventListener('DOMContentLoaded', () => {
   initAiHub();
   initAiEchoTest();
   initVulnerabilityRegistry();
+  initHouseholdRegistry();
   initWorkforceInsights();
   renderAuditLog();
   (async () => {
     try {
-      await Promise.all([loadResidents(), loadRequests(), loadComplaints(), loadAnnouncements(), loadServices(), loadAuditLog(), ...(window.IS_OFFICIAL_ADMIN ? [loadOfficials()] : [])]);
+      await Promise.all([
+        loadResidents(), loadRequests(), loadComplaints(), loadAnnouncements(), loadServices(), loadAuditLog(),
+        // Household data is non-fatal: the rest of the dashboard must still load if these fail.
+        loadHouseholds().catch(err => console.warn('Households unavailable:', err.message)),
+        loadHouseholdRegistry().catch(err => console.warn('Household registry unavailable:', err.message)),
+        ...(window.IS_OFFICIAL_ADMIN ? [loadOfficials()] : [])
+      ]);
       await refreshDashboard();
     } catch (err) {
       showToastAdmin('Data Load Failed', err.message);
