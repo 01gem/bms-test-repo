@@ -27,10 +27,10 @@ composer.lock
 # Logs
 *.log
 
-# Runtime and user-uploaded storage. Keep only the folder instructions and
-# the generated-documents access rules in the repository.
-document_templates/*
-!document_templates/README.txt
+# Runtime and user-uploaded storage.
+# Word sometimes leaves lock files next to open docs
+document_templates/~$*
+document_templates/*.tmp
 
 generated_documents/*
 !generated_documents/.htaccess
