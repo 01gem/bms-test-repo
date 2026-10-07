@@ -8,7 +8,8 @@
 
 require_once __DIR__ . '/../common.php';
 session_start();
-require_official_admin();
+// Allow both staff and admin officials (401 if no official session at all), matching create.php.
+require_official_session();
 
 require_post();
 $db = get_db();
