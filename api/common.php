@@ -250,4 +250,103 @@ function ai_decode_json(string $content): ?array {
   $decoded = json_decode($text, true);
   return is_array($decoded) ? $decoded : null;
 }
+
+/**
+ * Look up the poverty threshold to apply for a household.
+ *
+ * Lookup order (the FIRST hit wins):
+ *   1. geography_level = 'Province' AND province = $province
+ *   2. geography_level = 'Region'   AND region   = $region
+ *   3. geography_level = 'National'
+ * Every level requires is_active = 1; inactive rows are never used.
+ * Within a level the newest row wins (ORDER BY reference_year DESC, id DESC).
+ *
+ * Returns all columns of the matching poverty_thresholds row as an associative
+ * array, or null when no active row matches or the query fails. Database error
+ * detail is error_log()ed only; it is never echoed or returned.
+ */
+function lookup_poverty_threshold(string $province = 'Surigao del Norte', string $region = 'Caraga'): ?array {
+  $conn = get_db();
+  $levels = [
+    [
+      'sql' => "SELECT * FROM poverty_thresholds WHERE geography_level = 'Province' AND province = ? AND is_active = 1 ORDER BY reference_year DESC, id DESC LIMIT 1",
+      'param' => $province,
+    ],
+    [
+      'sql' => "SELECT * FROM poverty_thresholds WHERE geography_level = 'Region' AND region = ? AND is_active = 1 ORDER BY reference_year DESC, id DESC LIMIT 1",
+      'param' => $region,
+    ],
+    [
+      'sql' => "SELECT * FROM poverty_thresholds WHERE geography_level = 'National' AND is_active = 1 ORDER BY reference_year DESC, id DESC LIMIT 1",
+      'param' => null,
+    ],
+  ];
+
+  foreach ($levels as $level) {
+    $stmt = $conn->prepare($level['sql']);
+    if (!$stmt) {
+      error_log('Poverty threshold prepare failed: ' . $conn->error);
+      return null;
+    }
+    if ($level['param'] !== null) {
+      $param = $level['param'];
+      $stmt->bind_param('s', $param);
+    }
+    if (!$stmt->execute()) {
+      error_log('Poverty threshold execute failed: ' . $stmt->error);
+      $stmt->close();
+      return null;
+    }
+    $result = $stmt->get_result();
+    $row = $result ? $result->fetch_assoc() : null;
+    $stmt->close();
+    if ($row) {
+      return $row;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Generate the next household code: 'HH-' followed by a sequence number
+ * zero-padded to at least 4 digits (HH-0001, HH-0002, ...). The number is
+ * MAX(numeric part) + 1 over existing well-formed codes, not COUNT(*), so a
+ * deleted row never causes a code to be reused. Padding never truncates:
+ * HH-9999 is followed by HH-10000.
+ *
+ * NOT race-safe by design: two concurrent callers can receive the same code.
+ * The UNIQUE KEY on households.household_code is the safety net. Callers MUST
+ * catch a duplicate-key failure on INSERT (MySQL errno 1062) and retry with a
+ * fresh code from this function. No locking is used here.
+ *
+ * @throws RuntimeException when the sequence query fails. The database error
+ *                          detail is error_log()ed; the exception message is generic.
+ */
+function next_household_code(): string {
+  $conn = get_db();
+  $sql = 'SELECT COALESCE(MAX(CAST(SUBSTRING(household_code, 4) AS UNSIGNED)), 0) AS max_num'
+    . ' FROM households WHERE household_code REGEXP \'^HH-[0-9]+$\'';
+
+  $stmt = $conn->prepare($sql);
+  if (!$stmt) {
+    error_log('Household code prepare failed: ' . $conn->error);
+    throw new RuntimeException('Could not generate a household code.');
+  }
+  if (!$stmt->execute()) {
+    error_log('Household code execute failed: ' . $stmt->error);
+    $stmt->close();
+    throw new RuntimeException('Could not generate a household code.');
+  }
+  $result = $stmt->get_result();
+  $row = $result ? $result->fetch_assoc() : null;
+  $stmt->close();
+  if (!$row) {
+    error_log('Household code query returned no row.');
+    throw new RuntimeException('Could not generate a household code.');
+  }
+
+  $next = (int)$row['max_num'] + 1;
+  return 'HH-' . str_pad((string)$next, 4, '0', STR_PAD_LEFT);
+}
 ?>
