@@ -2,10 +2,10 @@
 -- All names, contacts, and household profiles in this file are synthetic.
 -- Do not run against a production database.
 --
--- Target: barangay_system_test only. Never barangay_system.
+-- Target: barangay_system_test_environment only.
 --   Prereq schema: database.sql + database/migration_household_profiling.sql
 --   (poverty_thresholds id 1 = Surigao del Norte 2023, PHP 29,865.00 per capita/yr).
---   Run:  mysql -uroot barangay_system_test < database/seed_demo_households.sql
+--   Run:  mysql -uroot barangay_system_test_environment < database/seed_demo_households.sql
 --
 -- Contents: 35 households (ids 1-35, codes HH-DEMO-0001..0035), 100 residents
 -- (ids 1001-1100, usernames demo_<surname><nn>, password "demo1234"), one

@@ -122,7 +122,7 @@ You need **all** of the following installed and working before this project will
 
 2. **Create the database.**
    Open phpMyAdmin (or the MySQL CLI) and import `database.sql`. This creates the
-   `barangay_system` database and all tables.
+   `barangay_system_test_environment` database and all tables.
 
    > `db.php` connects with `host=localhost`, `user=root`, `password=''` (Laragon's
    > defaults). Edit `db.php` directly if your MySQL setup differs.

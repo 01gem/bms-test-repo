@@ -32,11 +32,6 @@ function resident_age(string $birthdate): ?int {
 }
 
 $input = read_json_input();
-$context = ($input['context'] ?? '') === 'triage' ? 'triage' : 'registry';
-$situation = trim((string)($input['situation'] ?? ''));
-if (mb_strlen($situation) > 1000) {
-  json_error('Situation description must be 1000 characters or fewer.', 422);
-}
 
 $ids = [];
 foreach (is_array($input['resident_ids'] ?? null) ? $input['resident_ids'] : [] as $rawId) {
@@ -108,17 +103,8 @@ Return JSON only, with exactly one entry per resident:
 {"assessments":[{"id":123,"ai_score":72,"flags":["Solo parent","Income below 5000"],"reason":"..."}]}
 PROMPT;
 
-if ($context === 'triage') {
-  $systemPrompt .= "\n\nTask: calamity relief triage. ai_score is relief priority for the situation below. "
-    . "Weigh who is most at risk in this specific situation (for example elderly, PWD, young dependents, low income, large households), not only general poverty.";
-  $userMessage = json_encode([
-    'situation' => $situation !== '' ? $situation : 'No situation description given. Rank by general relief need.',
-    'residents' => $residents,
-  ], JSON_UNESCAPED_UNICODE);
-} else {
-  $systemPrompt .= "\n\nTask: general vulnerability assessment for the barangay vulnerability registry.";
-  $userMessage = json_encode(['residents' => $residents], JSON_UNESCAPED_UNICODE);
-}
+$systemPrompt .= "\n\nTask: general vulnerability assessment for the barangay vulnerability registry.";
+$userMessage = json_encode(['residents' => $residents], JSON_UNESCAPED_UNICODE);
 if ($userMessage === false) {
   json_error('Could not encode resident data for AI.', 500);
 }
@@ -162,7 +148,7 @@ if (!$assessments) {
 }
 
 $audit = is_array($input['audit'] ?? null) ? $input['audit'] : null;
-if ($context === 'registry' && $audit !== null) {
+if ($audit !== null) {
   $scope = mb_substr(trim((string)($audit['scope'] ?? 'All Puroks')), 0, 100);
   $total = max(0, (int)($audit['total'] ?? 0));
   log_audit(

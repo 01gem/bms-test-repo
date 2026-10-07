@@ -265,6 +265,8 @@ function ai_decode_json(string $content): ?array {
  * array, or null when no active row matches or the query fails. Database error
  * detail is error_log()ed only; it is never echoed or returned.
  */
+
+// Reserved for Day 2: the MPI engine will call this to resolve the active threshold.
 function lookup_poverty_threshold(string $province = 'Surigao del Norte', string $region = 'Caraga'): ?array {
   $conn = get_db();
   $levels = [
@@ -323,6 +325,8 @@ function lookup_poverty_threshold(string $province = 'Surigao del Norte', string
  * @throws RuntimeException when the sequence query fails. The database error
  *                          detail is error_log()ed; the exception message is generic.
  */
+
+// Reserved for Day 2: household creation endpoints will call this.
 function next_household_code(): string {
   $conn = get_db();
   $sql = 'SELECT COALESCE(MAX(CAST(SUBSTRING(household_code, 4) AS UNSIGNED)), 0) AS max_num'

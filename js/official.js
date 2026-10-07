@@ -555,52 +555,6 @@ function initAiEchoTest() {
   });
 }
 
-function initLaborMatcher() {
-  const queryInput = document.getElementById('laborQuery');
-  const matchBtn = document.getElementById('laborMatchBtn');
-  const status = document.getElementById('laborStatus');
-  const result = document.getElementById('laborResult');
-  const note = document.getElementById('laborResultNote');
-  const tbody = document.getElementById('laborResultBody');
-  if (!queryInput || !matchBtn || !status || !result || !tbody) return;
-
-  matchBtn.addEventListener('click', async () => {
-    const query = queryInput.value.trim();
-    if (!query) {
-      showToastAdmin('No Request Entered', 'Describe the labor need first.');
-      return;
-    }
-    matchBtn.disabled = true;
-    result.hidden = true;
-    status.hidden = false;
-    status.className = 'ai-echo-response is-loading';
-    status.textContent = 'Finding matching residents...';
-
-    try {
-      const data = await fetchJson(`${API_BASE}/ai/match_labor.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query })
-      });
-      const matches = data.matches || [];
-      status.hidden = true;
-      result.hidden = false;
-      if (note) note.textContent = `${matches.length} match${matches.length === 1 ? '' : 'es'} from ${data.candidate_count || 0} available residents.`;
-      tbody.innerHTML = matches.length ? matches.map(match => `<tr class="vulnerability-registry-entry">
-          <td style="font-weight:600">${escapeHtml(match.name)}</td>
-          <td>${escapeHtml(match.purok_zone || '-')}</td>
-          <td>${escapeHtml(match.contact || '-')}</td>
-          <td>${escapeHtml(match.match_reason)}</td>
-        </tr>`).join('') : '<tr><td colspan="4" class="registry-empty">No matching residents found for this request</td></tr>';
-    } catch (err) {
-      status.className = 'ai-echo-response is-error';
-      status.textContent = `Labor matching failed: ${err.message}`;
-    } finally {
-      matchBtn.disabled = false;
-    }
-  });
-}
-
 // ── WORKFORCE INSIGHTS ────────────────────
 const WORKFORCE_CATEGORIES = [
   'Skilled Trades', 'Unskilled Labor', 'Agriculture & Fishing', 'Office & Professional',
@@ -931,7 +885,11 @@ function mapResidentRow(row) {
     work_availability: row.work_availability || '',
     has_drivers_license: Number(row.has_drivers_license || 0),
     skill_category: row.skill_category || '',
-    eligibility_score: Number(row.eligibility_score || 0)
+    eligibility_score: Number(row.eligibility_score || 0),
+    // Household linkage (managed by household endpoints)
+    household_id: row.household_id ? Number(row.household_id) : null,
+    relationship_to_household_head: row.relationship_to_household_head || '',
+    profile_status: row.profile_status || 'unprofiled'
   };
 }
 
@@ -1016,7 +974,6 @@ async function loadResidents() {
   RESIDENTS = (data.residents || []).map(mapResidentRow);
   renderResidents(RESIDENTS);
   renderVulnerabilityRegistry();
-  renderTriagePurokOptions();
   renderWorkforceInsights();
 }
 
@@ -1050,7 +1007,7 @@ function calculateRegistryFactors(resident) {
 
 const AI_ASSESS_BATCH_SIZE = 20;
 
-async function runAiAssessment(ids, { context, situation = '', audit = null, onProgress } = {}) {
+async function runAiAssessment(ids, { context, audit = null, onProgress } = {}) {
   const results = new Map();
   const assessBatches = async (pending, sendAudit) => {
     for (let i = 0; i < pending.length; i += AI_ASSESS_BATCH_SIZE) {
@@ -1059,7 +1016,6 @@ async function runAiAssessment(ids, { context, situation = '', audit = null, onP
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           context,
-          situation,
           resident_ids: pending.slice(i, i + AI_ASSESS_BATCH_SIZE),
           audit: sendAudit && i === 0 ? audit : null
         })
@@ -1107,7 +1063,7 @@ function rerollRegistryOrder() {
   renderVulnerabilityRegistry();
 }
 
-// Registry, AI assessment and triage only consider active residents; the Residents table still shows everyone.
+// Registry and AI assessment only consider active residents; the Residents table still shows everyone.
 function activeResidents() {
   return RESIDENTS.filter(resident => resident.status === 'active');
 }
@@ -1279,178 +1235,11 @@ function exportRegistryCsv() {
   setTimeout(() => URL.revokeObjectURL(link.href), 0);
 }
 
-let TRIAGE_ROWS = [];
-
-function renderTriagePurokOptions() {
-  const list = document.getElementById('triagePurokList');
-  if (!list) return;
-  const checked = new Set([...list.querySelectorAll('input:checked')].map(input => input.value));
-  const puroks = [...new Set(RESIDENTS.map(r => r.purok_zone).filter(Boolean))].sort();
-  list.innerHTML = puroks.length ? puroks.map(purok => `<label class="triage-purok-option">
-      <input type="checkbox" value="${escapeAttribute(purok)}"${checked.has(purok) ? ' checked' : ''} />
-      ${escapeHtml(purok)}
-    </label>`).join('') : '<span class="registry-empty">No Puroks recorded in resident profiles.</span>';
-}
-
-let TRIAGE_METHOD_NOTE = '';
-
-function triageCandidates(puroks) {
-  const selected = new Set(puroks);
-  return activeResidents().filter(resident => selected.has(resident.purok_zone));
-}
-
-function buildTriageRows(puroks, assessments = null) {
-  return triageCandidates(puroks)
-    .sort((a, b) => {
-      if (assessments) {
-        const diff = assessments.get(b.dbId).ai_score - assessments.get(a.dbId).ai_score;
-        if (diff) return diff;
-      }
-      return Number(b.eligibility_score) - Number(a.eligibility_score);
-    })
-    .map((resident, index) => ({
-      rank: index + 1,
-      name: resident.name,
-      purok: resident.purok_zone,
-      score: Number(resident.eligibility_score) || 0,
-      ai: assessments ? assessments.get(resident.dbId) : null,
-      contact: resident.contact,
-      householdSize: resident.household_size
-    }));
-}
-
-function renderTriageResult() {
-  const result = document.getElementById('triageResult');
-  const tbody = document.getElementById('triageResultBody');
-  const exportBtn = document.getElementById('triageExportBtn');
-  const note = document.getElementById('triageMethodNote');
-  if (!result || !tbody || !exportBtn) return;
-  result.hidden = false;
-  exportBtn.hidden = TRIAGE_ROWS.length === 0;
-  if (note) note.textContent = TRIAGE_METHOD_NOTE;
-  tbody.innerHTML = TRIAGE_ROWS.length ? TRIAGE_ROWS.map(row => `<tr class="vulnerability-registry-entry">
-      <td style="font-weight:700">${row.rank}</td>
-      <td style="font-weight:600">${escapeHtml(row.name)}</td>
-      <td>${escapeHtml(row.purok)}</td>
-      <td><span class="vulnerability-score">${row.score}</span></td>
-      <td class="ai-assessment-cell">${row.ai ? aiAssessmentCell(row.ai) : '<span class="ai-tier ai-tier-none">Formula only</span>'}</td>
-      <td>${escapeHtml(row.contact)}</td>
-      <td>${escapeHtml(String(row.householdSize))}</td>
-    </tr>`).join('') : '<tr><td colspan="7" class="registry-empty">No residents found in the selected Puroks.</td></tr>';
-}
-
 function csvCell(value) {
   let text = String(value ?? '');
   const isPhoneLike = /^[+\-]?[\d\s()-]+$/.test(text);
   if (/^[=@\t\r]/.test(text) || (/^[+\-]/.test(text) && !isPhoneLike)) text = `'${text}`;
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
-function exportTriageCsv() {
-  if (!TRIAGE_ROWS.length) return;
-  const header = ['Rank', 'Name', 'Purok', 'Formula Score', 'AI Tier', 'AI Score', 'AI Reason', 'Contact', 'Household Size'];
-  const lines = [header, ...TRIAGE_ROWS.map(row => [
-    row.rank,
-    row.name,
-    row.purok,
-    row.score,
-    row.ai ? row.ai.tier : 'Formula only',
-    row.ai ? row.ai.ai_score : '',
-    row.ai ? row.ai.reason : '',
-    row.contact,
-    row.householdSize
-  ])].map(cells => cells.map(csvCell).join(','));
-  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-  const now = new Date();
-  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `relief-priority-${date}.csv`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(link.href), 0);
-}
-
-function initCalamityTriage() {
-  const generateBtn = document.getElementById('triageGenerateBtn');
-  const exportBtn = document.getElementById('triageExportBtn');
-  generateBtn?.addEventListener('click', async () => {
-    const situation = (document.getElementById('triageSituation')?.value || '').trim();
-    let puroks = [...document.querySelectorAll('#triagePurokList input:checked')].map(input => input.value);
-    const resetButton = () => {
-      generateBtn.disabled = false;
-      generateBtn.innerHTML = '<i class="fa-solid fa-list-ol"></i> Generate Priority List';
-    };
-    generateBtn.disabled = true;
-
-    if (!puroks.length) {
-      if (!situation) {
-        showToastAdmin('No Purok Selected', 'Select affected Puroks or describe the situation.');
-        resetButton();
-        return;
-      }
-      generateBtn.textContent = 'Identifying Puroks...';
-      try {
-        const data = await fetchJson(`${API_BASE}/ai/extract_puroks.php`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ situation })
-        });
-        puroks = data.puroks || [];
-      } catch (err) {
-        showToastAdmin('AI Purok Detection Failed', `${err.message} Select Puroks manually.`);
-        resetButton();
-        return;
-      }
-      if (!puroks.length) {
-        showToastAdmin('No Purok Identified', 'AI could not match the description to a Purok. Select Puroks manually.');
-        resetButton();
-        return;
-      }
-      document.querySelectorAll('#triagePurokList input').forEach(input => {
-        input.checked = puroks.includes(input.value);
-      });
-    }
-
-    const ids = triageCandidates(puroks).map(resident => resident.dbId);
-    let mode = 'formula';
-    let assessments = null;
-    if (ids.length) {
-      generateBtn.textContent = `AI ranking 0/${ids.length}...`;
-      try {
-        assessments = await runAiAssessment(ids, {
-          context: 'triage',
-          situation,
-          onProgress: (done, total) => { generateBtn.textContent = `AI ranking ${done}/${total}...`; }
-        });
-        if (assessments.size < ids.length) throw new Error(`AI skipped ${ids.length - assessments.size} residents.`);
-        mode = 'ai';
-      } catch (err) {
-        assessments = null;
-        showToastAdmin('AI Unavailable', `${err.message} Ranked by formula score instead.`);
-      }
-    }
-
-    TRIAGE_METHOD_NOTE = !ids.length ? '' : mode === 'ai'
-      ? `Ranked by Gemini relief priority${situation ? ' for the described situation' : ''}. Ties use formula score.`
-      : 'Ranked by formula score (AI ranking unavailable).';
-    TRIAGE_ROWS = buildTriageRows(puroks, assessments);
-    renderTriageResult();
-    resetButton();
-    try {
-      await fetchJson(`${API_BASE}/audit/log_triage.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ puroks, resident_count: TRIAGE_ROWS.length, mode, situation })
-      });
-      await loadAuditLog();
-    } catch (err) {
-      showToastAdmin('Audit Log Failed', err.message);
-    }
-  });
-  exportBtn?.addEventListener('click', exportTriageCsv);
-  renderTriagePurokOptions();
 }
 
 async function loadRequests() {
@@ -2213,9 +2002,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initDocumentGenerationModal();
   initAiHub();
   initAiEchoTest();
-  initLaborMatcher();
   initVulnerabilityRegistry();
-  initCalamityTriage();
   initWorkforceInsights();
   renderAuditLog();
   (async () => {

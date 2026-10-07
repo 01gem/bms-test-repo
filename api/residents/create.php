@@ -63,6 +63,13 @@ $training_certifications = trim((string)($input['training_certifications'] ?? ''
 $work_availability = trim((string)($input['work_availability'] ?? '')) ?: null;
 $has_drivers_license = !empty($input['has_drivers_license']) ? 1 : 0;
 
+// Household linkage (optional; populated later by household workflows).
+// profile_status is intentionally not set here — the DB default 'unprofiled' applies
+// until the household workflows promote it.
+$household_id = isset($input['household_id']) && $input['household_id'] !== ''
+  ? (int)$input['household_id'] : null;
+$relationship_to_household_head = trim((string)($input['relationship_to_household_head'] ?? '')) ?: null;
+
 $hash = password_hash($password, PASSWORD_DEFAULT);
 $score = calculate_eligibility_score([
   'employment_status' => $employment_status,
@@ -71,15 +78,24 @@ $score = calculate_eligibility_score([
   'birthdate' => $birthdate,
   'monthly_income_bracket' => $monthly_income_bracket,
 ]);
-$insert = $db->prepare("INSERT INTO residents (fname, lname, address, contact, username, password, birthdate, civil_status, purok_zone, household_size, number_of_dependents, is_household_head, is_solo_parent, is_pwd, is_4ps_member, years_of_residency, educational_attainment, employment_status, occupation, monthly_income_bracket, skills, work_experience_years, training_certifications, work_availability, has_drivers_license, eligibility_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+$insert = $db->prepare("INSERT INTO residents (
+  fname, lname, address, contact, username, password,
+  birthdate, civil_status, purok_zone, household_size, number_of_dependents,
+  is_household_head, is_solo_parent, is_pwd, is_4ps_member, years_of_residency,
+  educational_attainment, employment_status, occupation, monthly_income_bracket,
+  skills, work_experience_years, training_certifications, work_availability,
+  has_drivers_license, eligibility_score,
+  household_id, relationship_to_household_head
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 if (!$insert) json_error('Failed to prepare resident insert.', 500);
-$insert->bind_param('sssssssssiiiiiiisssssissii',
+$insert->bind_param('sssssssssiiiiiiisssssissiiis',
   $fname, $lname, $address, $contact, $username, $hash,
   $birthdate, $civil_status, $purok_zone, $household_size, $number_of_dependents,
   $is_household_head, $is_solo_parent, $is_pwd, $is_4ps_member, $years_of_residency,
   $educational_attainment, $employment_status, $occupation, $monthly_income_bracket,
   $skills, $work_experience_years, $training_certifications, $work_availability, $has_drivers_license,
-  $score
+  $score,
+  $household_id, $relationship_to_household_head
 );
 if (!$insert->execute()) {
   json_db_error('Failed to create resident', $insert->error);

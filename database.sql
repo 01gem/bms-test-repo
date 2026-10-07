@@ -1,6 +1,6 @@
 -- Create database for the application
-CREATE DATABASE IF NOT EXISTS `barangay_system` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE `barangay_system`;
+CREATE DATABASE IF NOT EXISTS `barangay_system_test_environment` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `barangay_system_test_environment`;
 
 CREATE TABLE IF NOT EXISTS `residents` (
   `id` int(10) NOT NULL AUTO_INCREMENT,
@@ -160,8 +160,11 @@ CREATE TABLE IF NOT EXISTS `local_services` (
   FOREIGN KEY (`posted_by`) REFERENCES `barangay_officials`(`id`)
 );
 
+
+-- Test admin credentials: username 'gem', password 'admin123'.
+-- CHANGE BEFORE PRODUCTION. This is a test-environment default.
 INSERT INTO `barangay_officials` (`id`, `fname`, `lname`, `username`, `role`, `address`,
  `contact`, `password`, `position`, `status`, `created_at`) VALUES (NULL, 'Gem', 'Lander',
-  'gem', 'admin', 'Purok 1, Barangay Sampaguita', '09999999999', '$2y$10$mYgU3xgq32rcE219Q5zXvOkzDni4GcLNT4i.sa9/X3KMoTy6lnZQ2', 'Barangay Captain',
+  'gem', 'admin', 'Purok 1, Barangay Sampaguita', '09999999999', '$2y$10$tdR115sHmFzrezadn3Pxfe9PLZVzaz7FS4Vvh7dAN4JPPfIjNtlm.', 'Barangay Captain',
    'active', CURRENT_TIMESTAMP
 );

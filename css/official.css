@@ -460,13 +460,6 @@ body.sidebar-collapsed .slider-container {
   background: var(--blue-lt);
   border-color: #93C5FD;
 }
-.triage-controls { display: flex; flex-direction: column; gap: 14px; margin-bottom: 12px; }
-.triage-purok-list { display: flex; flex-wrap: wrap; gap: 8px; }
-.triage-purok-option { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); font-size: 13px; cursor: pointer; }
-.triage-purok-option:has(input:checked) { background: var(--blue-lt); border-color: #93C5FD; color: var(--blue); font-weight: 600; }
-.triage-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-.triage-card [hidden], .labor-card [hidden] { display: none !important; }
-.labor-card .ai-echo-response { min-height: 0; margin: 0 0 12px; }
 .workforce-card [hidden] { display: none !important; }
 .workforce-card .ai-echo-response { min-height: 0; margin: 0 0 12px; }
 .workforce-stats { margin-bottom: 1.25rem; }
@@ -490,8 +483,6 @@ body.sidebar-collapsed .slider-container {
 .ai-tier-none { background: var(--surface); color: var(--text-3); font-weight: 600; }
 .ai-reason { margin-top: 5px; color: var(--text-2); font-size: 12.5px; line-height: 1.45; }
 .ai-flags { margin-top: 3px; color: var(--text-3); font-size: 11.5px; }
-.triage-situation { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; resize: vertical; }
-.triage-method-note { margin: 4px 0 2px; color: var(--text-3); font-size: 12.5px; }
 .registry-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 12px; color: var(--text-2); font-size: 13px; font-weight: 600; }
 .registry-pagination .btn-action:disabled { opacity: .45; cursor: not-allowed; }
 .ai-hub { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; max-width: 1100px; }
@@ -530,7 +521,6 @@ button.ai-tool-tile:focus-visible { outline: 2px solid var(--blue-mid); outline-
   .registry-header { flex-direction: column; }
   .registry-actions { width: 100%; }
   .registry-header .btn-primary-action { width: 100%; justify-content: center; }
-  .triage-actions .btn-primary-action { width: 100%; justify-content: center; }
   .ai-echo-test-controls { flex-direction: column; }
   .ai-echo-test-controls .btn-primary-action { width: 100%; }
 }

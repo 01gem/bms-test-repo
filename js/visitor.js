@@ -29,8 +29,8 @@ async function loadLandingStats() {
     const values = {
       registered_residents: `${data.registered_residents}`,
       verified_local_services: `${data.verified_local_services}`,
-      request_fulfillment_rate: `${data.request_fulfillment_rate}%`,
-      avg_response_time_minutes: `${data.avg_response_time_minutes} min`
+      request_fulfillment_rate: data.request_fulfillment_rate === null ? '—' : `${data.request_fulfillment_rate}%`,
+      avg_response_time_minutes: data.avg_response_time_minutes === null ? '—' : `${data.avg_response_time_minutes} min`
     };
     document.querySelectorAll('[data-landing-stat]').forEach((element) => {
       const key = element.dataset.landingStat;
@@ -44,6 +44,7 @@ async function loadLandingStats() {
 }
 
 // ── RENDER ANNOUNCEMENTS ──────────────────
+
 function renderAnnouncements() {
   const grid = document.getElementById('announceGrid');
   if (!grid) return;

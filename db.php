@@ -49,7 +49,7 @@ load_env();
 $DB_HOST = 'localhost';
 $DB_USER = 'root';
 $DB_PASS = '';
-$DB_NAME = 'barangay_system';
+$DB_NAME = 'barangay_system_test_environment';
 
 function get_db() {
   global $DB_HOST, $DB_USER, $DB_PASS, $DB_NAME;

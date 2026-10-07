@@ -67,6 +67,10 @@ $training_certifications = trim((string)($input['training_certifications'] ?? ''
 $work_availability = trim((string)($input['work_availability'] ?? '')) ?: null;
 $has_drivers_license = !empty($input['has_drivers_license']) ? 1 : 0;
 
+// NOTE: household_id, relationship_to_household_head and profile_status are NOT updated here.
+// They are managed exclusively by the household endpoints. This prevents an admin editing
+// a resident from silently unlinking them from a household.
+
 $profiling_set = ", birthdate = ?, civil_status = ?, purok_zone = ?, household_size = ?, number_of_dependents = ?, is_household_head = ?, is_solo_parent = ?, is_pwd = ?, is_4ps_member = ?, years_of_residency = ?, educational_attainment = ?, employment_status = ?, occupation = ?, monthly_income_bracket = ?, skills = ?, work_experience_years = ?, training_certifications = ?, work_availability = ?, has_drivers_license = ?, eligibility_score = ?";
 $score = calculate_eligibility_score([
   'employment_status' => $employment_status,
