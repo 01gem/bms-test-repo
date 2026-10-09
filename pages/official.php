@@ -91,7 +91,7 @@ if (count($officialNameParts) >= 2) {
       <button class="snav-item" data-tab="announcements"><i class="fa-solid fa-bullhorn"></i> <span class="nav-text">Announcements</span></button>
       <button class="snav-item" data-tab="services"><i class="fa-solid fa-store"></i> <span class="nav-text">Local Services</span></button>
       <div class="nav-group-label">Intelligence</div>
-      <button class="snav-item" data-tab="aianalyst"><i class="fa-solid fa-brain"></i> <span class="nav-text">AI Analyst</span></button>
+      <button class="snav-item" data-tab="aianalyst"><i class="fa-solid fa-brain"></i> <span class="nav-text">AI Analytics</span></button>
       <div class="nav-group-label">System</div>
       <?php if ($isOfficialAdmin): ?>
       <button class="snav-item" data-tab="officials"><i class="fa-solid fa-user-shield"></i> <span class="nav-text">Manage Officials</span></button>
@@ -545,9 +545,9 @@ if (count($officialNameParts) >= 2) {
         </div>
       </div>
 
-      <!-- ─── AI ANALYST ─── -->
+      <!-- ─── AI ANALYTICS ─── -->
       <div class="tab-panel" id="tab-aianalyst">
-        <div class="tab-header"><h2><i class="fa-solid fa-brain"></i> AI Analyst</h2></div>
+        <div class="tab-header"><h2><i class="fa-solid fa-brain"></i> AI Analytics</h2></div>
         <div class="ai-hub" id="aiHub">
           <button type="button" class="ai-tool-tile" data-ai-view="registry">
             <span class="ai-tile-ico" style="background:#DBEAFE;color:#1976D2"><i class="fa-solid fa-shield-halved"></i></span>
@@ -564,15 +564,25 @@ if (count($officialNameParts) >= 2) {
         </div>
         <div class="ai-subview" data-ai-subview="registry" hidden>
         <button type="button" class="ai-back-btn"><i class="fa-solid fa-arrow-left"></i> Back to AI Tools</button>
+
+        <div class="registry-tabs" role="tablist" aria-label="Registry view">
+          <button type="button" class="registry-tab active" data-registry-tab="vulnerability" role="tab" aria-selected="true">
+            <i class="fa-solid fa-shield-halved"></i> Vulnerability Registry
+          </button>
+          <button type="button" class="registry-tab" data-registry-tab="household" role="tab" aria-selected="false">
+            <i class="fa-solid fa-house-user"></i> Household Registry
+          </button>
+        </div>
+
+        <div class="registry-pane" data-registry-pane="vulnerability">
         <div class="card vulnerability-registry-card">
           <div class="registry-header">
             <div>
               <h3><i class="fa-solid fa-shield-halved"></i> Vulnerability Registry</h3>
-              <p>Formula scores from resident profiling data, with on-demand Gemini assessment of the filtered residents. Higher means more vulnerable.</p>
+              <p>Household MPI status and deprivations from the household questionnaire, with on-demand Gemini assessment of the filtered residents.</p>
             </div>
             <div class="registry-actions">
               <button id="aiAssessBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-wand-magic-sparkles"></i> AI Assess</button>
-              <button id="recalculateScoresBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-rotate"></i> Recalculate All Scores</button>
               <button id="registryExportBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-file-csv"></i> Export as CSV</button>
             </div>
           </div>
@@ -583,7 +593,16 @@ if (count($officialNameParts) >= 2) {
           </div>
           <div class="table-wrap">
             <table class="data-table vulnerability-registry-table">
-              <thead><tr><th>Name</th><th>Purok</th><th>Formula Score</th><th>AI Assessment</th><th>Top Contributing Factors</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Purok</th>
+                  <th>Household</th>
+                  <th>Priority Status</th>
+                  <th>Priority Indicators</th>
+                  <th>AI Assessment</th>
+                </tr>
+              </thead>
               <tbody id="vulnerabilityRegistryBody"></tbody>
             </table>
           </div>
@@ -593,11 +612,18 @@ if (count($officialNameParts) >= 2) {
             <button type="button" class="btn-action view" id="vulnerabilityNextBtn">Next <i class="fa-solid fa-chevron-right"></i></button>
           </div>
         </div>
+        </div>
+
+        <div class="registry-pane" data-registry-pane="household" hidden>
         <div class="card vulnerability-registry-card household-registry-card">
           <div class="registry-header">
             <div>
               <h3><i class="fa-solid fa-house-user"></i> Household Registry</h3>
               <p>One row per household. Households marked <strong>Unprofiled</strong> have no questionnaire data yet and cannot be assessed.</p>
+            </div>
+            <div class="registry-actions">
+              <button id="householdSortBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-arrow-down-wide-short"></i> Organize by Poverty</button>
+              <button id="householdExportBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-file-csv"></i> Export as CSV</button>
             </div>
           </div>
           <div class="table-toolbar">
@@ -607,10 +633,11 @@ if (count($officialNameParts) >= 2) {
           </div>
           <div class="table-wrap">
             <table class="data-table vulnerability-registry-table">
-              <thead><tr><th>Household</th><th>Head</th><th>Purok</th><th>Size</th><th>Profile Status</th><th>MPI</th><th>Income Status</th></tr></thead>
+              <thead><tr><th>Household</th><th>Head</th><th>Purok</th><th>Size</th><th>Profile Status</th><th>MPI</th><th>Income Status</th><th class="action-column">Actions</th></tr></thead>
               <tbody id="householdRegistryBody"></tbody>
             </table>
           </div>
+        </div>
         </div>
         </div>
         <div class="ai-subview" data-ai-subview="workforce" hidden>
@@ -710,6 +737,39 @@ if (count($officialNameParts) >= 2) {
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Household Profiling Wizard Modal -->
+  <div class="modal-overlay form-modal-overlay" id="householdWizardModal" aria-hidden="true">
+    <div class="modal-box form-card household-wizard-box" role="dialog" aria-modal="true" aria-labelledby="householdWizardTitle">
+      <div class="form-card-header">
+        <h3 id="householdWizardTitle"><i class="fa-solid fa-house-user"></i> Profile Household</h3>
+        <button class="close-card-btn" id="closeHouseholdWizard" type="button" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div class="household-wizard-meta" id="householdWizardMeta"></div>
+
+      <div class="wizard-progress" id="householdWizardProgress">
+        <div class="wz-step" data-step="1"><span class="wz-dot">1</span><span class="wz-label">Composition</span></div>
+        <div class="wz-step" data-step="2"><span class="wz-dot">2</span><span class="wz-label">Education</span></div>
+        <div class="wz-step" data-step="3"><span class="wz-dot">3</span><span class="wz-label">Health</span></div>
+        <div class="wz-step" data-step="4"><span class="wz-dot">4</span><span class="wz-label">Housing</span></div>
+        <div class="wz-step" data-step="5"><span class="wz-dot">5</span><span class="wz-label">Employment</span></div>
+        <div class="wz-step" data-step="6"><span class="wz-dot">6</span><span class="wz-label">Income</span></div>
+      </div>
+
+      <form id="householdWizardForm" novalidate>
+        <div id="householdWizardStepBody" class="household-wizard-step-body"></div>
+
+        <div class="form-actions wizard-actions">
+          <button type="button" class="btn-cancel-form" id="householdWizardCancel">Cancel</button>
+          <span class="wizard-spacer"></span>
+          <button type="button" class="btn-cancel-form" id="householdWizardBack" hidden><i class="fa-solid fa-arrow-left"></i> Back</button>
+          <button type="button" class="btn-submit-form" id="householdWizardNext">Next <i class="fa-solid fa-arrow-right"></i></button>
+          <button type="submit" class="btn-submit-form" id="householdWizardSave" hidden><i class="fa-solid fa-floppy-disk"></i> Save Step</button>
+        </div>
+      </form>
     </div>
   </div>
 

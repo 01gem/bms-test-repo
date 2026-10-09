@@ -19,7 +19,7 @@ const SECTION_PLAQUES = {
   complaints: { icon: 'fa-triangle-exclamation', label: 'Grievance Redressal' },
   announcements: { icon: 'fa-bullhorn', label: 'Public Information' },
   services: { icon: 'fa-hand-holding-heart', label: 'Welfare & Operations' },
-  aianalyst: { icon: 'fa-brain', label: 'AI Analyst' },
+  aianalyst: { icon: 'fa-brain', label: 'AI Analytics' },
   officials: { icon: 'fa-user-shield', label: 'Human Resources' },
   auditlog: { icon: 'fa-shield-halved', label: 'Security & Audit' },
   profile: { icon: 'fa-user', label: 'My Official Profile' }
@@ -517,7 +517,6 @@ function showAiView(view) {
   });
   if (view === 'registry') {
     rerollRegistryOrder();
-    loadHouseholdRegistry().catch(() => { /* table keeps its last render */ });
   }
 }
 
@@ -888,7 +887,22 @@ function mapResidentRow(row) {
     work_availability: row.work_availability || '',
     has_drivers_license: Number(row.has_drivers_license || 0),
     skill_category: row.skill_category || '',
-    eligibility_score: Number(row.eligibility_score || 0),
+    household_code: row.household_code || '',
+    household_profile_status: row.household_profile_status || '',
+    household_profile_completeness: Number(row.household_profile_completeness || 0),
+    mpi_score: row.household_mpi_score === null ? null : Number(row.household_mpi_score),
+    mpi_status: row.household_mpi_status || '',
+    income_poverty_status: row.household_income_poverty_status || '',
+    mpi_deprivations: (() => {
+      const raw = row.household_mpi_indicators_json;
+      if (!raw) return [];
+      try {
+        const decoded = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        const inds = decoded && decoded.indicators;
+        if (!inds) return [];
+        return Object.entries(inds).filter(([, v]) => v === 1).map(([k]) => k);
+      } catch { return []; }
+    })(),
     // Household linkage (managed by household endpoints)
     household_id: row.household_id ? Number(row.household_id) : null,
     relationship_to_household_head: row.relationship_to_household_head || '',
@@ -980,34 +994,6 @@ async function loadResidents() {
   renderWorkforceInsights();
 }
 
-function calculateRegistryFactors(resident) {
-  const factors = [];
-  const employment = String(resident.employment_status || '');
-  if (employment === 'Unemployed') factors.push({ label: 'Unemployed', points: 30 });
-  if (employment === 'Self-Employed') factors.push({ label: 'Self-employed', points: 10 });
-
-  const dependents = Math.min(Math.max(Number(resident.number_of_dependents) || 0, 0), 5);
-  if (dependents > 0) factors.push({ label: `${dependents} dependents`, points: dependents * 5 });
-  if (Number(resident.is_pwd)) factors.push({ label: 'PWD', points: 20 });
-
-  const birthdate = String(resident.birthdate || '');
-  if (birthdate) {
-    const birth = new Date(`${birthdate}T00:00:00`);
-    if (!Number.isNaN(birth.getTime())) {
-      const today = new Date();
-      let age = today.getFullYear() - birth.getFullYear();
-      const beforeBirthday = today.getMonth() < birth.getMonth()
-        || (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate());
-      if (beforeBirthday) age--;
-      if (age >= 60) factors.push({ label: 'Senior (60+)', points: 15 });
-    }
-  }
-
-  if (resident.monthly_income_bracket === 'Below 5000') factors.push({ label: 'Income below 5000', points: 20 });
-  if (resident.monthly_income_bracket === '5000-10000') factors.push({ label: 'Income 5000-10000', points: 10 });
-  return factors.sort((a, b) => b.points - a.points);
-}
-
 const AI_ASSESS_BATCH_SIZE = 20;
 
 async function runAiAssessment(ids, { context, audit = null, onProgress } = {}) {
@@ -1049,7 +1035,6 @@ function aiAssessmentCell(assessment) {
 const REGISTRY_PAGE_SIZE = 20;
 let REGISTRY_PAGE = 1;
 let REGISTRY_ORDER = new Map();
-let REGISTRY_SORT_BY_SCORE = false;
 let REGISTRY_SORT_BY_AI = false;
 const AI_ASSESSMENTS = new Map();
 
@@ -1060,7 +1045,6 @@ function registryOrderKey(resident) {
 
 function rerollRegistryOrder() {
   REGISTRY_ORDER = new Map();
-  REGISTRY_SORT_BY_SCORE = false;
   REGISTRY_SORT_BY_AI = false;
   REGISTRY_PAGE = 1;
   renderVulnerabilityRegistry();
@@ -1069,6 +1053,48 @@ function rerollRegistryOrder() {
 // Registry and AI assessment only consider active residents; the Residents table still shows everyone.
 function activeResidents() {
   return RESIDENTS.filter(resident => resident.status === 'active');
+}
+
+const MPI_INDICATOR_LABELS = {
+  school_attendance: 'Out-of-school children',
+  educational_attainment: 'Low education',
+  hunger: 'Hunger',
+  food_insecurity: 'Food insecurity',
+  health_access: 'Poor health access',
+  assets: 'Few assets',
+  toilet: 'Poor sanitation',
+  water: 'Unsafe water',
+  tenure: 'Insecure tenure',
+  materials: 'Weak housing',
+  electricity: 'No electricity',
+  underemployment: 'Underemployment',
+  working_children: 'Child labor',
+};
+
+function priorityStatusBadge(resident) {
+  if (!resident.household_id) return '<span class="ai-tier ai-tier-none">Unprofiled</span>';
+  const status = resident.mpi_status;
+  const score = resident.mpi_score === null ? '' : ` · ${Number(resident.mpi_score).toFixed(4)}`;
+  if (status === 'poor')      return `<span class="ai-tier ai-tier-critical">Poor${score}</span>`;
+  if (status === 'not_poor')  return `<span class="ai-tier ai-tier-low">Not poor${score}</span>`;
+  if (status === 'incomplete')return '<span class="ai-tier ai-tier-moderate">Incomplete</span>';
+  return '<span class="ai-tier ai-tier-none">No MPI data</span>';
+}
+
+function priorityIndicatorsCell(resident) {
+  const list = resident.mpi_deprivations || [];
+  if (!list.length) {
+    if (!resident.household_id) return '<span style="color:var(--text-3)">No household profile</span>';
+    if (resident.mpi_status === 'not_poor') return '<span style="color:var(--text-3)">No deprivations</span>';
+    if (resident.mpi_status === 'incomplete') return '<span style="color:var(--text-3)">Assessment incomplete</span>';
+    return '<span style="color:var(--text-3)">—</span>';
+  }
+  return escapeHtml(list.map(n => MPI_INDICATOR_LABELS[n] || n).join(', '));
+}
+
+function householdCell(resident) {
+  if (!resident.household_code) return '<span style="color:var(--text-3)">—</span>';
+  return `<code>${escapeHtml(resident.household_code)}</code>`;
 }
 
 function renderVulnerabilityRegistry() {
@@ -1080,11 +1106,12 @@ function renderVulnerabilityRegistry() {
   const puroks = [...new Set(residents.map(r => r.purok_zone).filter(Boolean))].sort();
   const selected = filter.value;
   filter.innerHTML = '<option value="all">All Puroks</option>'
-    + puroks.map(purok => `<option value="${escapeAttribute(purok)}">${escapeHtml(purok)}</option>`).join('');
+    + puroks.map(p => `<option value="${escapeAttribute(p)}">${escapeHtml(p)}</option>`).join('');
   filter.value = puroks.includes(selected) ? selected : 'all';
 
+  const statusRank = { poor: 0, incomplete: 1, not_poor: 2, '': 3 };
   const rows = residents
-    .filter(resident => filter.value === 'all' || resident.purok_zone === filter.value)
+    .filter(r => filter.value === 'all' || r.purok_zone === filter.value)
     .sort((a, b) => {
       if (REGISTRY_SORT_BY_AI) {
         const aiA = AI_ASSESSMENTS.get(a.dbId);
@@ -1092,10 +1119,15 @@ function renderVulnerabilityRegistry() {
         if (aiA && aiB && aiA.ai_score !== aiB.ai_score) return aiB.ai_score - aiA.ai_score;
         if (!!aiA !== !!aiB) return aiA ? -1 : 1;
       }
-      return REGISTRY_SORT_BY_SCORE || REGISTRY_SORT_BY_AI
-        ? Number(b.eligibility_score) - Number(a.eligibility_score)
-        : registryOrderKey(a) - registryOrderKey(b);
+      const rankA = statusRank[a.mpi_status] ?? 3;
+      const rankB = statusRank[b.mpi_status] ?? 3;
+      if (rankA !== rankB) return rankA - rankB;
+      const scoreA = a.mpi_score === null ? -1 : a.mpi_score;
+      const scoreB = b.mpi_score === null ? -1 : b.mpi_score;
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      return registryOrderKey(a) - registryOrderKey(b);
     });
+
   const totalPages = Math.max(1, Math.ceil(rows.length / REGISTRY_PAGE_SIZE));
   REGISTRY_PAGE = Math.min(Math.max(REGISTRY_PAGE, 1), totalPages);
   const pageRows = rows.slice((REGISTRY_PAGE - 1) * REGISTRY_PAGE_SIZE, REGISTRY_PAGE * REGISTRY_PAGE_SIZE);
@@ -1105,17 +1137,17 @@ function renderVulnerabilityRegistry() {
   if (pageLabel) pageLabel.textContent = `Page ${REGISTRY_PAGE} of ${totalPages}`;
   if (prevBtn) prevBtn.disabled = REGISTRY_PAGE <= 1;
   if (nextBtn) nextBtn.disabled = REGISTRY_PAGE >= totalPages;
-  tbody.innerHTML = pageRows.length ? pageRows.map(resident => {
-    const factors = calculateRegistryFactors(resident).slice(0, 3)
-      .map(factor => `${factor.label} +${factor.points}`).join(', ') || 'No contributing factors';
-    return `<tr class="vulnerability-registry-entry">
-      <td style="font-weight:600">${escapeHtml(resident.name)}</td>
-      <td>${escapeHtml(resident.purok_zone || 'Not provided')}</td>
-      <td><span class="vulnerability-score">${Number(resident.eligibility_score) || 0}</span></td>
-      <td class="ai-assessment-cell">${aiAssessmentCell(AI_ASSESSMENTS.get(resident.dbId))}</td>
-      <td>${escapeHtml(factors)}</td>
-    </tr>`;
-  }).join('') : '<tr><td colspan="5" class="registry-empty">No residents match this Purok.</td></tr>';
+
+  tbody.innerHTML = pageRows.length ? pageRows.map(r => `
+    <tr class="vulnerability-registry-entry">
+      <td style="font-weight:600">${escapeHtml(r.name)}</td>
+      <td>${escapeHtml(r.purok_zone || 'Not provided')}</td>
+      <td>${householdCell(r)}</td>
+      <td>${priorityStatusBadge(r)}</td>
+      <td>${priorityIndicatorsCell(r)}</td>
+      <td class="ai-assessment-cell">${aiAssessmentCell(AI_ASSESSMENTS.get(r.dbId))}</td>
+    </tr>`).join('')
+    : '<tr><td colspan="6" class="registry-empty">No residents match this Purok.</td></tr>';
 }
 
 async function runRegistryAiAssessment(button) {
@@ -1147,7 +1179,7 @@ async function runRegistryAiAssessment(button) {
     showToastAdmin('AI Assessment Complete', `${results.size} residents assessed${skipped ? `; ${skipped} skipped by AI` : ''}.`);
     await loadAuditLog();
   } catch (err) {
-    showToastAdmin('AI Assessment Failed', `${err.message} Formula scores are still shown.`);
+    showToastAdmin('AI Assessment Failed', `${err.message} MPI results are still shown.`);
   } finally {
     button.disabled = false;
     button.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> AI Assess';
@@ -1155,9 +1187,29 @@ async function runRegistryAiAssessment(button) {
   }
 }
 
+function initRegistryTabs() {
+  const tabs = document.querySelectorAll('[data-registry-tab]');
+  const panes = document.querySelectorAll('[data-registry-pane]');
+  if (!tabs.length || !panes.length) return;
+
+  const activate = (name) => {
+    tabs.forEach(t => {
+      const on = t.dataset.registryTab === name;
+      t.classList.toggle('active', on);
+      t.setAttribute('aria-selected', String(on));
+    });
+    panes.forEach(p => { p.hidden = p.dataset.registryPane !== name; });
+    // Lazy-load the household table only when the user opens its tab.
+    if (name === 'household') {
+      loadHouseholdRegistry().catch(err => console.warn('Household registry unavailable:', err.message));
+    }
+  };
+
+  tabs.forEach(t => t.addEventListener('click', () => activate(t.dataset.registryTab)));
+}
+
 function initVulnerabilityRegistry() {
   const filter = document.getElementById('vulnerabilityPurokFilter');
-  const button = document.getElementById('recalculateScoresBtn');
   filter?.addEventListener('change', () => {
     REGISTRY_PAGE = 1;
     renderVulnerabilityRegistry();
@@ -1170,25 +1222,6 @@ function initVulnerabilityRegistry() {
     REGISTRY_PAGE++;
     renderVulnerabilityRegistry();
   });
-  button?.addEventListener('click', async () => {
-    button.disabled = true;
-    button.textContent = 'Recalculating...';
-    try {
-      const previousScores = new Map(RESIDENTS.map(r => [r.dbId, r.eligibility_score]));
-      const data = await fetchJson(`${API_BASE}/residents/recalculate_all_scores.php`, { method: 'POST' });
-      REGISTRY_SORT_BY_SCORE = true;
-      REGISTRY_SORT_BY_AI = false;
-      REGISTRY_PAGE = 1;
-      await loadResidents();
-      const changed = RESIDENTS.filter(r => previousScores.get(r.dbId) !== r.eligibility_score).length;
-      showToastAdmin('Scores Recalculated', `${data.updated || 0} residents recalculated; ${changed} score${changed === 1 ? '' : 's'} changed.`);
-    } catch (err) {
-      showToastAdmin('Recalculation Failed', err.message);
-    } finally {
-      button.disabled = false;
-      button.innerHTML = '<i class="fa-solid fa-rotate"></i> Recalculate All Scores';
-    }
-  });
   const aiAssessBtn = document.getElementById('aiAssessBtn');
   aiAssessBtn?.addEventListener('click', () => runRegistryAiAssessment(aiAssessBtn));
   document.getElementById('registryExportBtn')?.addEventListener('click', exportRegistryCsv);
@@ -1198,31 +1231,34 @@ function initVulnerabilityRegistry() {
 function exportRegistryCsv() {
   const filter = document.getElementById('vulnerabilityPurokFilter');
   const purok = filter ? filter.value : 'all';
+  const statusRank = { poor: 0, incomplete: 1, not_poor: 2, '': 3 };
   const rows = RESIDENTS
-    .filter(resident => purok === 'all' || resident.purok_zone === purok)
+    .filter(r => purok === 'all' || r.purok_zone === purok)
     .sort((a, b) => {
-      const aiA = AI_ASSESSMENTS.get(a.dbId);
-      const aiB = AI_ASSESSMENTS.get(b.dbId);
-      if (aiA && aiB && aiA.ai_score !== aiB.ai_score) return aiB.ai_score - aiA.ai_score;
-      if (!!aiA !== !!aiB) return aiA ? -1 : 1;
-      return Number(b.eligibility_score) - Number(a.eligibility_score);
+      const rankA = statusRank[a.mpi_status] ?? 3;
+      const rankB = statusRank[b.mpi_status] ?? 3;
+      if (rankA !== rankB) return rankA - rankB;
+      const scoreA = a.mpi_score === null ? -1 : a.mpi_score;
+      const scoreB = b.mpi_score === null ? -1 : b.mpi_score;
+      return scoreB - scoreA;
     });
-  if (!rows.length) {
-    showToastAdmin('Nothing to Export', 'No residents match this Purok.');
-    return;
-  }
-  const header = ['Name', 'Purok', 'Formula Score', 'AI Tier', 'AI Score', 'AI Reason', 'AI Flags', 'Top Contributing Factors'];
-  const lines = [header, ...rows.map(resident => {
-    const assessment = AI_ASSESSMENTS.get(resident.dbId);
+  if (!rows.length) { showToastAdmin('Nothing to Export', 'No residents match this Purok.'); return; }
+  const header = ['Name', 'Purok', 'Household', 'Priority Status', 'MPI Score', 'Income Poverty Status', 'Priority Indicators', 'AI Tier', 'AI Score', 'AI Reason', 'AI Flags'];
+  const lines = [header, ...rows.map(r => {
+    const ai = AI_ASSESSMENTS.get(r.dbId);
+    const indicators = (r.mpi_deprivations || []).map(n => MPI_INDICATOR_LABELS[n] || n).join('; ');
     return [
-      resident.name,
-      resident.purok_zone || 'Not provided',
-      Number(resident.eligibility_score) || 0,
-      assessment ? assessment.tier : 'Not assessed',
-      assessment ? assessment.ai_score : '',
-      assessment ? assessment.reason : '',
-      assessment ? (assessment.flags || []).join('; ') : '',
-      calculateRegistryFactors(resident).slice(0, 3).map(factor => `${factor.label} +${factor.points}`).join('; ') || 'No contributing factors'
+      r.name,
+      r.purok_zone || 'Not provided',
+      r.household_code || '',
+      r.mpi_status ? r.mpi_status.replace('_', ' ') : (r.household_id ? 'No MPI data' : 'Unprofiled'),
+      r.mpi_score === null ? '' : r.mpi_score,
+      r.income_poverty_status || '',
+      indicators || 'No deprivations',
+      ai ? ai.tier : 'Not assessed',
+      ai ? ai.ai_score : '',
+      ai ? ai.reason : '',
+      ai ? (ai.flags || []).join('; ') : ''
     ];
   })].map(cells => cells.map(csvCell).join(','));
   const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
@@ -1269,6 +1305,7 @@ async function refreshDashboard() {
 // ── HOUSEHOLDS ────────────────────────────
 let HOUSEHOLDS = [];
 let HOUSEHOLD_REGISTRY = [];
+let HOUSEHOLD_SORT_BY_POVERTY = false;
 const PROFILE_FIELD_KEYS = [
   'birthdate', 'civil_status', 'purok_zone', 'number_of_dependents',
   'is_household_head', 'is_solo_parent', 'is_pwd', 'is_4ps_member', 'years_of_residency',
@@ -1304,11 +1341,49 @@ function householdProfileBadge(h) {
   return '<span class="status-badge status-pending">Unprofiled</span>';
 }
 
+const MPI_DIMENSION_LABELS = {
+  education: 'Education',
+  health_nutrition: 'Health',
+  housing_water_sanitation: 'Housing',
+  employment: 'Employment',
+};
+
+// Returns the human labels of any MPI dimension whose score is null.
+// Used only when mpi_status === 'incomplete'; empty array otherwise.
+function householdMpiMissingDimensions(h) {
+  if (h.mpi_status !== 'incomplete') return [];
+  const raw = h.mpi_indicators_json;
+  if (!raw) return [];
+  try {
+    const decoded = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const dims = decoded && decoded.dimension_scores;
+    if (!dims) return [];
+    return Object.entries(dims)
+      .filter(([, v]) => v === null)
+      .map(([k]) => MPI_DIMENSION_LABELS[k] || k);
+  } catch {
+    return [];
+  }
+}
+
 function householdMpiBadge(h) {
-  if (h.mpi_score === null || h.mpi_score === undefined) return '<span class="ai-tier ai-tier-none">Not assessed</span>';
+  if (h.mpi_score === null || h.mpi_score === undefined) {
+    if (h.mpi_status === 'incomplete') {
+      const missing = householdMpiMissingDimensions(h);
+      const tip = missing.length
+        ? ` title="Missing questionnaire data in: ${escapeAttribute(missing.join(', '))}"`
+        : '';
+      const suffix = missing.length ? ` · ${escapeHtml(missing.join(', '))}` : '';
+      return `<span class="ai-tier ai-tier-moderate"${tip}>Incomplete${suffix}</span>`;
+    }
+    return '<span class="ai-tier ai-tier-none">Not assessed</span>';
+  }
   const tier = h.mpi_status === 'poor' ? 'critical' : (h.mpi_status === 'not_poor' ? 'low' : 'moderate');
   const label = h.mpi_status === 'poor' ? 'Poor' : (h.mpi_status === 'not_poor' ? 'Not poor' : 'Incomplete');
-  return `<span class="ai-tier ai-tier-${tier}">${label} (<span class="mpi-score">${Number(h.mpi_score).toFixed(4)}</span>)</span>`;
+  const version = h.assessment_method_version
+    ? ` title="Method: ${escapeAttribute(h.assessment_method_version)}"`
+    : '';
+  return `<span class="ai-tier ai-tier-${tier}"${version}>${label} (<span class="mpi-score">${Number(h.mpi_score).toFixed(4)}</span>)</span>`;
 }
 
 function householdIncomeBadge(h) {
@@ -1328,7 +1403,9 @@ function renderHouseholdRegistry() {
     + puroks.map(purok => `<option value="${escapeAttribute(purok)}">${escapeHtml(purok)}</option>`).join('');
   filter.value = puroks.includes(selected) ? selected : 'all';
 
-  const rows = HOUSEHOLD_REGISTRY.filter(h => filter.value === 'all' || h.purok_zone === filter.value);
+  let rows = HOUSEHOLD_REGISTRY.filter(h => filter.value === 'all' || h.purok_zone === filter.value);
+  if (HOUSEHOLD_SORT_BY_POVERTY) rows = sortHouseholdsByPoverty(rows);
+
   tbody.innerHTML = rows.length ? rows.map(h => `<tr class="vulnerability-registry-entry">
       <td><code>${escapeHtml(h.code)}</code></td>
       <td style="font-weight:600">${escapeHtml(h.head_name || '—')}</td>
@@ -1337,12 +1414,506 @@ function renderHouseholdRegistry() {
       <td>${householdProfileBadge(h)}</td>
       <td>${householdMpiBadge(h)}</td>
       <td>${householdIncomeBadge(h)}</td>
+      <td class="action-column">
+        <div class="action-btns">
+          <button type="button" class="btn-action process" onclick="openHouseholdProfileWizard(${Number(h.id)})">
+            <i class="fa-solid fa-clipboard-list"></i> ${h.profile_status === 'unprofiled' ? 'Profile' : 'Continue'}
+          </button>
+        </div>
+      </td>
     </tr>`).join('')
-    : `<tr><td colspan="7" class="registry-empty">${HOUSEHOLD_REGISTRY.length ? 'No households match this Purok.' : 'No households registered yet.'}</td></tr>`;
+    : `<tr><td colspan="8" class="registry-empty">${HOUSEHOLD_REGISTRY.length ? 'No households match this Purok.' : 'No households registered yet.'}</td></tr>`;
 }
 
 function initHouseholdRegistry() {
   document.getElementById('householdPurokFilter')?.addEventListener('change', renderHouseholdRegistry);
+  document.getElementById('householdSortBtn')?.addEventListener('click', toggleHouseholdSort);
+  document.getElementById('householdExportBtn')?.addEventListener('click', exportHouseholdCsv);
+}
+
+// Poor first (highest MPI score first), then incomplete, then not_poor, then unassessed.
+// Ties break on household code so the order is stable.
+function sortHouseholdsByPoverty(rows) {
+  const rank = { poor: 0, incomplete: 1, not_poor: 2 };
+  return [...rows].sort((a, b) => {
+    const rankA = Object.prototype.hasOwnProperty.call(rank, a.mpi_status) ? rank[a.mpi_status] : 3;
+    const rankB = Object.prototype.hasOwnProperty.call(rank, b.mpi_status) ? rank[b.mpi_status] : 3;
+    if (rankA !== rankB) return rankA - rankB;
+    const scoreA = a.mpi_score === null || a.mpi_score === undefined ? -1 : Number(a.mpi_score);
+    const scoreB = b.mpi_score === null || b.mpi_score === undefined ? -1 : Number(b.mpi_score);
+    if (scoreA !== scoreB) return scoreB - scoreA;
+    return String(a.code || '').localeCompare(String(b.code || ''));
+  });
+}
+
+function toggleHouseholdSort() {
+  HOUSEHOLD_SORT_BY_POVERTY = !HOUSEHOLD_SORT_BY_POVERTY;
+  const btn = document.getElementById('householdSortBtn');
+  if (btn) {
+    btn.innerHTML = HOUSEHOLD_SORT_BY_POVERTY
+      ? '<i class="fa-solid fa-arrow-down-wide-short"></i> Reset Order'
+      : '<i class="fa-solid fa-arrow-down-wide-short"></i> Organize by Poverty';
+  }
+  renderHouseholdRegistry();
+}
+
+function exportHouseholdCsv() {
+  const filter = document.getElementById('householdPurokFilter');
+  const purok = filter ? filter.value : 'all';
+  const rows = sortHouseholdsByPoverty(
+    HOUSEHOLD_REGISTRY.filter(h => purok === 'all' || h.purok_zone === purok)
+  );
+  if (!rows.length) {
+    showToastAdmin('Nothing to Export', 'No households match this Purok.');
+    return;
+  }
+  const header = [
+    'Household Code', 'Head', 'Purok', 'Size',
+    'Profile Status', 'Profile Completeness (%)',
+    'MPI Status', 'MPI Score', 'MPI Method',
+    'Missing MPI Dimensions',
+    'Income Status', 'Annual Per Capita Income',
+    'Assessment Complete', 'Profiled At'
+  ];
+  const lines = [header, ...rows.map(h => [
+    h.code || '',
+    h.head_name || '',
+    h.purok_zone || '',
+    h.household_size ?? '',
+    h.profile_status || '',
+    h.profile_completeness ?? '',
+    h.mpi_status ? String(h.mpi_status).replace(/_/g, ' ') : '',
+    h.mpi_score === null || h.mpi_score === undefined ? '' : h.mpi_score,
+    h.assessment_method_version || '',
+    householdMpiMissingDimensions(h).join('; '),
+    h.income_poverty_status ? String(h.income_poverty_status).replace(/_/g, ' ') : '',
+    h.annual_per_capita_income === null || h.annual_per_capita_income === undefined ? '' : h.annual_per_capita_income,
+    Number(h.assessment_complete) === 1 ? 'Yes' : 'No',
+    h.profiled_at || ''
+  ])].map(cells => cells.map(csvCell).join(','));
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const now = new Date();
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const suffix = purok === 'all' ? '' : `-${purok.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `household-registry${suffix}-${date}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 0);
+}
+
+// ── HOUSEHOLD PROFILING WIZARD ─────────────
+const HOUSEHOLD_WIZARD_FIELD_LABELS = {
+  num_children: 'Number of children (under 18)',
+  num_working_age: 'Working-age members (18–64)',
+  num_seniors: 'Seniors (65+)',
+  has_4ps: 'Household is a 4Ps beneficiary',
+  has_pwd_member: 'Has a member with disability (PWD)',
+  has_senior_member: 'Has a senior citizen member',
+  is_solo_parent_hh: 'Solo-parent household',
+  children_5_17_total: 'Children aged 5–17',
+  children_5_17_not_in_school: 'Of those, not currently in school',
+  members_19_plus_total: 'Household members aged 19+',
+  has_19_plus_secondary_grad: 'Has a 19+ member who finished high school',
+  medical_need_6mo: 'Any member needed medical care in the last 6 months',
+  medical_treatment_obtained: 'Medical treatment was obtained',
+  distance_health_center_km: 'Distance to nearest health center (km)',
+  distance_hospital_km: 'Distance to nearest hospital (km)',
+  fies_worried_food: 'Worried about not having enough food',
+  fies_no_nutritious: 'Unable to eat healthy or nutritious food',
+  fies_few_food_types: 'Ate only a few kinds of food',
+  fies_skipped_meals: 'Skipped a meal',
+  fies_ate_less: 'Ate less than they should',
+  fies_ran_out: 'Ran out of food',
+  fies_hungry: 'Were hungry but did not eat',
+  fies_whole_day_no_food: 'Went a whole day without eating',
+  housing_tenure: 'Housing tenure',
+  roof_material: 'Roof material',
+  wall_material: 'Wall material',
+  floor_area_sqm: 'Floor area (sqm)',
+  main_water_source: 'Main water source',
+  toilet_facility: 'Toilet facility',
+  shared_toilet: 'Toilet is shared with other households',
+  has_electricity: 'Household has electricity',
+  has_internet: 'Household has internet access',
+  public_transport_access: 'Public transport is accessible',
+  assets_json: 'Household assets (JSON array)',
+  labor_force_total: 'Members in the labor force',
+  employed_count: 'Currently employed',
+  unemployed_seeking_count: 'Unemployed and seeking work',
+  employed_wanting_more_hours: 'Employed but want more hours',
+  working_children_5_17: 'Working children aged 5–17',
+  working_children_not_in_school: 'Working children not in school',
+  monthly_wages: 'Monthly wages / salaries',
+  monthly_business: 'Monthly business income',
+  monthly_remittances: 'Monthly remittances',
+  monthly_pension: 'Monthly pension',
+  monthly_govt_assistance: 'Monthly government assistance',
+  monthly_other: 'Monthly other income',
+  contextual_flags_json: 'Contextual flags (JSON object)',
+};
+
+const HOUSEHOLD_WIZARD_SELECT_OPTIONS = {
+  housing_tenure: ['Owned', 'Rented', 'Rent-free with consent', 'Rent-free without consent', 'Informal settler'],
+  roof_material: ['Strong', 'Mixed', 'Light', 'Salvaged', 'Makeshift'],
+  wall_material: ['Strong', 'Mixed', 'Light', 'Salvaged', 'Makeshift'],
+  main_water_source: ['Piped into dwelling', 'Piped to yard', 'Community faucet', 'Protected well', 'Unprotected well', 'Protected spring', 'Unprotected spring', 'River/stream', 'Rainwater', 'Peddler', 'Bottled water'],
+  toilet_facility: ['Water-sealed flush', 'Water-sealed pour', 'Closed pit', 'Open pit', 'None'],
+};
+
+const HOUSEHOLD_WIZARD = {
+  household: null,
+  steps: [],
+  fieldTypes: {},
+  profile: {},
+  currentStep: 1,
+  loading: false,
+};
+
+async function openHouseholdProfileWizard(householdId) {
+  if (HOUSEHOLD_WIZARD.loading) return;
+  HOUSEHOLD_WIZARD.loading = true;
+  try {
+    const data = await fetchJson(`${API_BASE}/households/profile_get.php?household_id=${encodeURIComponent(householdId)}`);
+    HOUSEHOLD_WIZARD.household = data.household;
+    HOUSEHOLD_WIZARD.steps = data.steps || [];
+    HOUSEHOLD_WIZARD.fieldTypes = data.field_types || {};
+    HOUSEHOLD_WIZARD.profile = data.profile || {};
+    const suggested = Number(data.suggested_start_step) || 1;
+    HOUSEHOLD_WIZARD.currentStep = Math.min(Math.max(suggested, 1), HOUSEHOLD_WIZARD.steps.length || 1);
+    renderHouseholdWizardHeader();
+    renderHouseholdWizardStep(HOUSEHOLD_WIZARD.currentStep);
+    const modal = document.getElementById('householdWizardModal');
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+  } catch (err) {
+    showToastAdmin('Wizard Load Failed', err.message);
+  } finally {
+    HOUSEHOLD_WIZARD.loading = false;
+  }
+}
+
+function closeHouseholdWizard() {
+  const modal = document.getElementById('householdWizardModal');
+  if (modal) {
+    modal.classList.remove('show');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+  document.getElementById('householdWizardStepBody').innerHTML = '';
+  HOUSEHOLD_WIZARD.household = null;
+  HOUSEHOLD_WIZARD.steps = [];
+  HOUSEHOLD_WIZARD.profile = {};
+  HOUSEHOLD_WIZARD.currentStep = 1;
+}
+
+function renderHouseholdWizardHeader() {
+  const h = HOUSEHOLD_WIZARD.household;
+  if (!h) return;
+  const title = document.getElementById('householdWizardTitle');
+  if (title) title.innerHTML = `<i class="fa-solid fa-house-user"></i> Profile ${escapeHtml(h.code)}`;
+  const meta = document.getElementById('householdWizardMeta');
+  if (meta) {
+    const completeness = Number(h.profile_completeness) || 0;
+    const status = h.profile_status || 'unprofiled';
+    const statusLabel = status === 'complete' ? 'Complete' : (status === 'in_progress' ? 'In progress' : 'Unprofiled');
+    const mpi = h.mpi_score === null || h.mpi_score === undefined ? '—' : Number(h.mpi_score).toFixed(4);
+    const income = h.income_poverty_status || '—';
+    meta.innerHTML = `
+      <span><i class="fa-solid fa-user"></i> ${escapeHtml(h.head_name || 'No head yet')}</span>
+      <span><i class="fa-solid fa-location-dot"></i> ${escapeHtml(h.purok_zone || 'No purok')}</span>
+      <span><i class="fa-solid fa-users"></i> Size ${Number(h.household_size) || 0}</span>
+      <span><i class="fa-solid fa-chart-simple"></i> ${statusLabel} · ${completeness}%</span>
+      <span><i class="fa-solid fa-shield-halved"></i> MPI ${escapeHtml(mpi)}</span>
+      <span><i class="fa-solid fa-coins"></i> Income ${escapeHtml(income)}</span>`;
+  }
+  document.querySelectorAll('#householdWizardProgress .wz-step').forEach(el => {
+    const step = Number(el.dataset.step);
+    el.classList.toggle('active', step === HOUSEHOLD_WIZARD.currentStep);
+    el.classList.toggle('done', step < HOUSEHOLD_WIZARD.currentStep);
+  });
+}
+
+function renderHouseholdWizardStep(stepNumber) {
+  const stepDef = HOUSEHOLD_WIZARD.steps.find(s => Number(s.step) === Number(stepNumber));
+  const body = document.getElementById('householdWizardStepBody');
+  if (!stepDef || !body) return;
+
+  body.innerHTML = stepDef.fields.map(fieldName => {
+    const label = HOUSEHOLD_WIZARD_FIELD_LABELS[fieldName] || prettifyFieldName(fieldName);
+    const type = HOUSEHOLD_WIZARD.fieldTypes[fieldName] || 'string';
+    const value = Object.prototype.hasOwnProperty.call(HOUSEHOLD_WIZARD.profile, fieldName)
+      ? HOUSEHOLD_WIZARD.profile[fieldName]
+      : null;
+    return renderHouseholdWizardField(fieldName, label, type, value);
+  }).join('');
+
+  const steps = HOUSEHOLD_WIZARD.steps;
+  const idx = steps.findIndex(s => Number(s.step) === Number(stepNumber));
+  const backBtn = document.getElementById('householdWizardBack');
+  const nextBtn = document.getElementById('householdWizardNext');
+  const saveBtn = document.getElementById('householdWizardSave');
+  if (backBtn) backBtn.hidden = idx <= 0;
+  if (nextBtn) nextBtn.hidden = idx < 0 || idx >= steps.length - 1;
+  if (saveBtn) saveBtn.hidden = idx !== steps.length - 1;
+
+  applyHouseholdWizardConditionalLogic();
+}
+
+function renderHouseholdWizardField(fieldName, label, type, value) {
+  const id = `hwf-${fieldName}`;
+  const commonAttrs = `data-field="${escapeAttribute(fieldName)}" data-type="${escapeAttribute(type)}"`;
+  const valueStr = value === null || value === undefined ? '' : String(value);
+
+  if (type === 'bool') {
+    const selected = value === null || value === undefined || value === '' ? '' : String(Number(value));
+    return `<div class="field">
+      <label for="${id}">${escapeHtml(label)}</label>
+      <select id="${id}" class="form-input" ${commonAttrs}>
+        <option value="" ${selected === '' ? 'selected' : ''}>— Select —</option>
+        <option value="1" ${selected === '1' ? 'selected' : ''}>Yes</option>
+        <option value="0" ${selected === '0' ? 'selected' : ''}>No</option>
+      </select>
+    </div>`;
+  }
+  if (type === 'int') {
+    return `<div class="field">
+      <label for="${id}">${escapeHtml(label)}</label>
+      <input id="${id}" type="number" min="0" step="1" class="form-input" value="${escapeAttribute(valueStr)}" ${commonAttrs} />
+    </div>`;
+  }
+  if (type === 'decimal') {
+    return `<div class="field">
+      <label for="${id}">${escapeHtml(label)}</label>
+      <input id="${id}" type="number" min="0" step="0.01" class="form-input" value="${escapeAttribute(valueStr)}" ${commonAttrs} />
+    </div>`;
+  }
+  if (type === 'json') {
+    let jsonText = '';
+    if (value !== null && value !== undefined) {
+      jsonText = typeof value === 'string' ? value : JSON.stringify(value);
+    }
+    return `<div class="field hw-field-full">
+      <label for="${id}">${escapeHtml(label)} <span class="opt-label">(valid JSON)</span></label>
+      <textarea id="${id}" rows="3" class="form-input" ${commonAttrs} placeholder='["mobile phone","radio"]'>${escapeHtml(jsonText)}</textarea>
+    </div>`;
+  }
+  if (HOUSEHOLD_WIZARD_SELECT_OPTIONS[fieldName]) {
+    const options = HOUSEHOLD_WIZARD_SELECT_OPTIONS[fieldName];
+    return `<div class="field">
+      <label for="${id}">${escapeHtml(label)}</label>
+      <select id="${id}" class="form-input" ${commonAttrs}>
+        <option value="" ${valueStr === '' ? 'selected' : ''}>— Select —</option>
+        ${options.map(o => `<option value="${escapeAttribute(o)}" ${valueStr === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+      </select>
+    </div>`;
+  }
+  return `<div class="field">
+    <label for="${id}">${escapeHtml(label)}</label>
+    <input id="${id}" type="text" class="form-input" value="${escapeAttribute(valueStr)}" ${commonAttrs} />
+  </div>`;
+}
+
+/**
+ * Conditional logic that keeps the MPI engine's non-NULL invariant happy:
+ *   - Step 2: children_5_17_not_in_school must be 0 when total is 0.
+ *   - Step 3: medical_treatment_obtained must be 0 when there was no medical need
+ *             (the engine requires both to be non-NULL to score health_access).
+ *   - Step 5: working_children_not_in_school must be 0 when working_children_5_17 is 0.
+ * When the gate is 0, we lock the dependent field to 0 so the save sends a
+ * concrete value instead of NULL.
+ */
+function applyHouseholdWizardConditionalLogic() {
+  const body = document.getElementById('householdWizardStepBody');
+  if (!body) return;
+  const get = (name) => body.querySelector(`[data-field="${name}"]`);
+
+  const totalChildren = get('children_5_17_total');
+  const notInSchool = get('children_5_17_not_in_school');
+  if (totalChildren && notInSchool) {
+    const sync = () => {
+      const total = totalChildren.value;
+      if (total !== '' && Number(total) === 0) {
+        notInSchool.value = '0';
+        notInSchool.disabled = true;
+      } else {
+        notInSchool.disabled = false;
+      }
+    };
+    totalChildren.addEventListener('input', sync);
+    sync();
+  }
+
+  const needMed = get('medical_need_6mo');
+  const gotMed = get('medical_treatment_obtained');
+  if (needMed && gotMed) {
+    const sync = () => {
+      if (needMed.value === '0') {
+        gotMed.value = '0';
+        gotMed.disabled = true;
+      } else {
+        gotMed.disabled = false;
+      }
+    };
+    needMed.addEventListener('change', sync);
+    sync();
+  }
+
+  const workingKids = get('working_children_5_17');
+  const workingKidsNotSchool = get('working_children_not_in_school');
+  if (workingKids && workingKidsNotSchool) {
+    const sync = () => {
+      const v = workingKids.value;
+      if (v !== '' && Number(v) === 0) {
+        workingKidsNotSchool.value = '0';
+        workingKidsNotSchool.disabled = true;
+      } else {
+        workingKidsNotSchool.disabled = false;
+      }
+    };
+    workingKids.addEventListener('input', sync);
+    sync();
+  }
+}
+
+function collectHouseholdWizardStepFields() {
+  const body = document.getElementById('householdWizardStepBody');
+  if (!body) return {};
+  const fields = {};
+  body.querySelectorAll('[data-field]').forEach(input => {
+    const name = input.dataset.field;
+    const type = input.dataset.type;
+    const raw = input.value;
+    if (raw === '' || raw === null || raw === undefined) {
+      fields[name] = null;
+    } else if (type === 'bool') {
+      fields[name] = raw === '1' ? 1 : 0;
+    } else if (type === 'int' || type === 'decimal') {
+      const n = Number(raw);
+      fields[name] = Number.isFinite(n) ? n : null;
+    } else {
+      fields[name] = raw;
+    }
+  });
+  return fields;
+}
+
+async function saveHouseholdWizardStep(stepNumber, fields, { showSuccessToast = true } = {}) {
+  const payload = {
+    household_id: HOUSEHOLD_WIZARD.household.id,
+    step: stepNumber,
+    fields,
+  };
+  const data = await fetchJson(`${API_BASE}/households/profile_save_step.php`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  // Merge saved values back into local state so Back→Next round-trips work.
+  Object.assign(HOUSEHOLD_WIZARD.profile, fields);
+
+  // Refresh the header from the server's derived state.
+  const h = HOUSEHOLD_WIZARD.household;
+  if (h) {
+    h.profile_completeness = data.profile_completeness;
+    h.profile_status = data.profile_status;
+    h.mpi_score = data.mpi_score;
+    h.mpi_status = data.mpi_status;
+    h.annual_per_capita_income = data.annual_per_capita_income;
+    h.income_poverty_status = data.income_poverty_status;
+    h.assessment_complete = data.assessment_complete;
+  }
+  renderHouseholdWizardHeader();
+
+  // Keep the registry in sync so badges update without a page reload.
+  await loadHouseholdRegistry().catch(() => {});
+
+  if (showSuccessToast) {
+    if (Number(data.assessment_complete) === 1) {
+      showToastAdmin(
+        'Household Profile Complete',
+        `MPI: ${data.mpi_status || '—'} (${data.mpi_score ?? '—'}), Income: ${data.income_poverty_status || '—'}`
+      );
+    } else {
+      showToastAdmin('Step Saved', `Completeness: ${data.profile_completeness}%`);
+    }
+  }
+  return data;
+}
+
+async function advanceHouseholdWizard() {
+  const stepNumber = HOUSEHOLD_WIZARD.currentStep;
+  const nextBtn = document.getElementById('householdWizardNext');
+  if (nextBtn) nextBtn.disabled = true;
+  try {
+    const fields = collectHouseholdWizardStepFields();
+    await saveHouseholdWizardStep(stepNumber, fields);
+    const steps = HOUSEHOLD_WIZARD.steps;
+    const idx = steps.findIndex(s => Number(s.step) === Number(stepNumber));
+    if (idx >= 0 && idx < steps.length - 1) {
+      HOUSEHOLD_WIZARD.currentStep = Number(steps[idx + 1].step);
+      renderHouseholdWizardHeader();
+      renderHouseholdWizardStep(HOUSEHOLD_WIZARD.currentStep);
+    }
+  } catch (err) {
+    showToastAdmin('Save Failed', err.message);
+  } finally {
+    if (nextBtn) nextBtn.disabled = false;
+  }
+}
+
+function goBackHouseholdWizard() {
+  const steps = HOUSEHOLD_WIZARD.steps;
+  const idx = steps.findIndex(s => Number(s.step) === Number(HOUSEHOLD_WIZARD.currentStep));
+  if (idx > 0) {
+    HOUSEHOLD_WIZARD.currentStep = Number(steps[idx - 1].step);
+    renderHouseholdWizardHeader();
+    renderHouseholdWizardStep(HOUSEHOLD_WIZARD.currentStep);
+  }
+}
+
+function initHouseholdWizard() {
+  const modal = document.getElementById('householdWizardModal');
+  const form = document.getElementById('householdWizardForm');
+  if (!modal || !form) return;
+
+  document.getElementById('closeHouseholdWizard')?.addEventListener('click', closeHouseholdWizard);
+  document.getElementById('householdWizardCancel')?.addEventListener('click', closeHouseholdWizard);
+  document.getElementById('householdWizardBack')?.addEventListener('click', goBackHouseholdWizard);
+  document.getElementById('householdWizardNext')?.addEventListener('click', advanceHouseholdWizard);
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const saveBtn = document.getElementById('householdWizardSave');
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      const fields = collectHouseholdWizardStepFields();
+      await saveHouseholdWizardStep(HOUSEHOLD_WIZARD.currentStep, fields);
+      // Only close when the assessment is complete; otherwise stay open so the
+      // official can keep working through remaining steps.
+      const h = HOUSEHOLD_WIZARD.household;
+      if (h && h.assessment_complete === 1) {
+        closeHouseholdWizard();
+      } else {
+        // If there's a later incomplete step, jump to it; otherwise stay put.
+        const nextIncomplete = HOUSEHOLD_WIZARD.steps
+          .map(s => Number(s.step))
+          .find(n => n > HOUSEHOLD_WIZARD.currentStep
+            && HOUSEHOLD_WIZARD.steps.some(s => Number(s.step) === n));
+        if (nextIncomplete) {
+          HOUSEHOLD_WIZARD.currentStep = nextIncomplete;
+          renderHouseholdWizardHeader();
+          renderHouseholdWizardStep(nextIncomplete);
+        }
+      }
+    } catch (err) {
+      showToastAdmin('Save Failed', err.message);
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  });
 }
 
 // ── RESIDENT WIZARD ───────────────────────
@@ -2196,6 +2767,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initAiEchoTest();
   initVulnerabilityRegistry();
   initHouseholdRegistry();
+  initHouseholdWizard();
+  initRegistryTabs();
   initWorkforceInsights();
   renderAuditLog();
   (async () => {
@@ -2204,7 +2777,6 @@ document.addEventListener('DOMContentLoaded', () => {
         loadResidents(), loadRequests(), loadComplaints(), loadAnnouncements(), loadServices(), loadAuditLog(),
         // Household data is non-fatal: the rest of the dashboard must still load if these fail.
         loadHouseholds().catch(err => console.warn('Households unavailable:', err.message)),
-        loadHouseholdRegistry().catch(err => console.warn('Household registry unavailable:', err.message)),
         ...(window.IS_OFFICIAL_ADMIN ? [loadOfficials()] : [])
       ]);
       await refreshDashboard();

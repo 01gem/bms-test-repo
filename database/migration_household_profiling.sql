@@ -2,7 +2,6 @@
 -- INSERT will fail or duplicate if re-run. Back up and test on a copy first.
 -- Run order: poverty_thresholds -> households -> household_profiles -> ALTER residents -> 
 -- migration UPDATE. Select the target database before running.
--- Day 1 ships schema + seed only. The computation engine and household UI are Day 2.
 CREATE TABLE IF NOT EXISTS `poverty_thresholds` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `reference_year` INT NOT NULL,

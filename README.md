@@ -44,7 +44,7 @@ AI-assisted analyst suite, and role-based staff/admin access.
 | 🏛️ **Official portal** | Request processing, resident management, complaints, announcements, local services, official profile photo |
 | 👑 **Admin tools** | Official account management, last-admin protection, full audit-log access |
 | 📲 **SMS notifications** | Document-ready pickup notices, complaint resolution, announcement broadcasts, OTP password recovery via [httpSMS](https://httpsms.com) |
-| 🤖 **AI Analyst** | Vulnerability Registry (formula + Gemini assessment), Calamity Triage with auto Purok detection, Labor Matcher, Workforce Insights, Connectivity Test |
+| 🤖 **AI Analytics** | Vulnerability Registry (formula + Gemini assessment), Calamity Triage with auto Purok detection, Labor Matcher, Workforce Insights, Connectivity Test |
 | 📄 **Document generation** | Word-template filling and PDF conversion through LibreOffice, with in-browser preview |
 | 📤 **CSV export** | Vulnerability Registry and Calamity Triage priority lists exportable as CSV |
 | 🧾 **Audit logging** | Official write actions are recorded for traceability |
@@ -110,7 +110,7 @@ You need **all** of the following installed and working before this project will
   - A SIM slot identifier (`SIM1` or `SIM2`) if the sending device is dual-SIM
 - Without this, document-ready notices, complaint resolution SMS, announcement broadcasts, and OTP password recovery will silently fail to send (the rest of the app still works).
 
-### 4. Gemini API key (required for AI Analyst features)
+### 4. Gemini API key (required for AI Analytics features)
 - Get a key from Google AI Studio: https://aistudio.google.com/app/apikey
 - Without this, only the rule-based formula scoring remains available; the AI Vulnerability assessment, Calamity Triage AI ranking, Labor Matcher, and Workforce Classifier will fall back or return configuration errors.
 
@@ -262,9 +262,9 @@ Calamity Triage when Gemini is unavailable.
 
 ---
 
-## 🔌 AI Analyst
+## 🔌 AI Analytics
 
-The AI Analyst tab is a hub with five tools. All AI calls route through `ai_chat()`
+The AI Analytics tab is a hub with five tools. All AI calls route through `ai_chat()`
 in `api/common.php` and read `GEMINI_API_KEY` from the server-side `.env`.
 
 | Tool | Endpoint(s) | What it does |
@@ -387,7 +387,7 @@ production hosting. Before deploying anywhere reachable outside your local machi
 
 ## Acknowledgments
 
-Built as a capstone project. Document generation, SMS integration, the AI Analyst
+Built as a capstone project. Document generation, SMS integration, the AI Analytics
 suite, and role-based access were iteratively developed and hardened over the course
 of the project — see commit history for the progression from initial prototype to
 current state.

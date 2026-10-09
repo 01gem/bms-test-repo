@@ -104,13 +104,6 @@ if ($profileNow) {
 if ($householdMode === 'new') $is_household_head = 1;
 
 $hash = password_hash($password, PASSWORD_DEFAULT);
-$score = calculate_eligibility_score([
-  'employment_status' => $employment_status,
-  'number_of_dependents' => $number_of_dependents,
-  'is_pwd' => $is_pwd,
-  'birthdate' => $birthdate,
-  'monthly_income_bracket' => $monthly_income_bracket,
-]);
 
 $householdInsertSql = 'INSERT INTO households (household_code, address, purok_zone, household_size, profile_status)'
   . ' VALUES (?, ?, ?, ?, \'unprofiled\')';
@@ -147,17 +140,16 @@ try {
     is_household_head, is_solo_parent, is_pwd, is_4ps_member, years_of_residency,
     educational_attainment, employment_status, occupation, monthly_income_bracket,
     skills, work_experience_years, training_certifications, work_availability,
-    has_drivers_license, eligibility_score,
+    has_drivers_license,
     household_id, relationship_to_household_head
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
   if (!$insert) throw new RuntimeException('resident prepare failed: ' . $db->error);
-  $insert->bind_param('sssssssssiiiiiiisssssissiiis',
+  $insert->bind_param('sssssssssiiiiiiisssssissiis',
     $fname, $lname, $address, $contact, $username, $hash,
     $birthdate, $civil_status, $purok_zone, $household_size, $number_of_dependents,
     $is_household_head, $is_solo_parent, $is_pwd, $is_4ps_member, $years_of_residency,
     $educational_attainment, $employment_status, $occupation, $monthly_income_bracket,
     $skills, $work_experience_years, $training_certifications, $work_availability, $has_drivers_license,
-    $score,
     $householdId, $relationshipToHead
   );
   if (!$insert->execute()) {

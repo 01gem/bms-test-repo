@@ -16,14 +16,23 @@ if (empty($_SESSION['official_id'])) {
 
 $db = get_db();
 
-$sql = "SELECT id, fname, lname, address, contact, username, profile_photo, status,
-  birthdate, civil_status, purok_zone, household_size, number_of_dependents,
-  is_household_head, is_solo_parent, is_pwd, is_4ps_member, years_of_residency,
-  educational_attainment, employment_status, occupation, monthly_income_bracket,
-  skills, work_experience_years, training_certifications, work_availability,
-  has_drivers_license, skill_category, eligibility_score,
-  household_id, relationship_to_household_head, profile_status
-  FROM residents ORDER BY id DESC";
+$sql = "SELECT r.id, r.fname, r.lname, r.address, r.contact, r.username, r.profile_photo, r.status,
+  r.birthdate, r.civil_status, r.purok_zone, r.household_size, r.number_of_dependents,
+  r.is_household_head, r.is_solo_parent, r.is_pwd, r.is_4ps_member, r.years_of_residency,
+  r.educational_attainment, r.employment_status, r.occupation, r.monthly_income_bracket,
+  r.skills, r.work_experience_years, r.training_certifications, r.work_availability,
+  r.has_drivers_license, r.skill_category,
+  r.household_id, r.relationship_to_household_head, r.profile_status,
+  h.household_code,
+  h.profile_status         AS household_profile_status,
+  h.profile_completeness   AS household_profile_completeness,
+  h.mpi_score              AS household_mpi_score,
+  h.mpi_status             AS household_mpi_status,
+  h.income_poverty_status  AS household_income_poverty_status,
+  h.mpi_indicators_json    AS household_mpi_indicators_json
+  FROM residents r
+  LEFT JOIN households h ON h.id = r.household_id
+  ORDER BY r.id DESC";
 $stmt = $db->prepare($sql);
 if (!$stmt) json_error('Failed to prepare residents query.', 500);
 $rows = db_query_all($stmt);

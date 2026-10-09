@@ -96,44 +96,6 @@ function log_audit(
   return $ok;
 }
 
-function calculate_eligibility_score(array $resident): int {
-  $score = 0;
-
-  $employment = (string)($resident['employment_status'] ?? '');
-  if ($employment === 'Unemployed') {
-    $score += 30;
-  } elseif ($employment === 'Self-Employed') {
-    $score += 10;
-  }
-
-  $dependents = min((int)($resident['number_of_dependents'] ?? 0), 5);
-  $score += $dependents * 5;
-
-  if (!empty($resident['is_pwd'])) {
-    $score += 20;
-  }
-
-  $birthdate = (string)($resident['birthdate'] ?? '');
-  if ($birthdate !== '') {
-    $birth = DateTime::createFromFormat('Y-m-d', $birthdate);
-    if ($birth !== false) {
-      $age = (int)(new DateTime())->diff($birth)->y;
-      if ($age >= 60) {
-        $score += 15;
-      }
-    }
-  }
-
-  $bracket = (string)($resident['monthly_income_bracket'] ?? '');
-  if ($bracket === 'Below 5000') {
-    $score += 20;
-  } elseif ($bracket === '5000-10000') {
-    $score += 10;
-  }
-
-  return min(max($score, 0), 100);
-}
-
 function ai_chat(
   string $userMessage,
   string $systemPrompt = '',
@@ -264,9 +226,10 @@ function ai_decode_json(string $content): ?array {
  * Returns all columns of the matching poverty_thresholds row as an associative
  * array, or null when no active row matches or the query fails. Database error
  * detail is error_log()ed only; it is never echoed or returned.
+ *
+ * Called by profile_save_step.php after each wizard save to resolve the active
+ * threshold before assess_household() is run.
  */
-
-// Reserved for Day 2: the MPI engine will call this to resolve the active threshold.
 function lookup_poverty_threshold(string $province = 'Surigao del Norte', string $region = 'Caraga'): ?array {
   $conn = get_db();
   $levels = [
@@ -325,8 +288,6 @@ function lookup_poverty_threshold(string $province = 'Surigao del Norte', string
  * @throws RuntimeException when the sequence query fails. The database error
  *                          detail is error_log()ed; the exception message is generic.
  */
-
-// Reserved for Day 2: household creation endpoints will call this.
 function next_household_code(): string {
   $conn = get_db();
   $sql = 'SELECT COALESCE(MAX(CAST(SUBSTRING(household_code, 4) AS UNSIGNED)), 0) AS max_num'

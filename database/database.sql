@@ -35,7 +35,6 @@ CREATE TABLE IF NOT EXISTS `residents` (
   `has_drivers_license` TINYINT(1) DEFAULT 0,
   -- System-computed profiling fields
   `skill_category` VARCHAR(50) NULL,
-  `eligibility_score` INT DEFAULT 0,
   -- Login lockout
   `failed_logins` INT NOT NULL DEFAULT 0,
   `locked_until` DATETIME NULL DEFAULT NULL,
