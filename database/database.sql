@@ -17,22 +17,15 @@ CREATE TABLE IF NOT EXISTS `residents` (
   `civil_status` VARCHAR(30) NULL,
   `purok_zone` VARCHAR(50) NULL,
   `household_size` INT DEFAULT 1,
-  `number_of_dependents` INT DEFAULT 0,
-  `is_household_head` TINYINT(1) DEFAULT 0,
   `is_solo_parent` TINYINT(1) DEFAULT 0,
   `is_pwd` TINYINT(1) DEFAULT 0,
   `is_4ps_member` TINYINT(1) DEFAULT 0,
-  `years_of_residency` INT DEFAULT 0,
   -- Profiling: Livelihood & Skills
   `educational_attainment` VARCHAR(50) NULL,
   `employment_status` ENUM('Employed','Unemployed','Self-Employed','Student','Retired') NULL,
   `occupation` VARCHAR(150) NULL,
-  `monthly_income_bracket` ENUM('Below 5000','5000-10000','10000-20000','Above 20000') NULL,
-  `skills` TEXT NULL,
-  `work_experience_years` INT DEFAULT 0,
   `training_certifications` TEXT NULL,
   `work_availability` ENUM('Full-time','Part-time','Seasonal','Not looking') NULL,
-  `has_drivers_license` TINYINT(1) DEFAULT 0,
   -- System-computed profiling fields
   `skill_category` VARCHAR(50) NULL,
   -- Login lockout
@@ -82,16 +75,35 @@ CREATE TABLE IF NOT EXISTS `document_requests` (
   `reference_no` varchar(50) NOT NULL,
   `resident_id` int(10) NOT NULL,
   `resident_name` varchar(100) NOT NULL,
-  `resident_email` varchar(100) DEFAULT NULL,
   `document_type` varchar(100) NOT NULL,
   `purpose` varchar(150) NOT NULL,
+  `copies` int(10) NOT NULL DEFAULT 1,
+  `total_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `payment_status` enum('unpaid','paid','waived') NOT NULL DEFAULT 'unpaid',
   `date_requested` varchar(30) NOT NULL,
   `status` varchar(30) NOT NULL DEFAULT 'pending',
+  `date_completed` datetime DEFAULT NULL,
   `generated_document_path` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `reference_no` (`reference_no`),
   FOREIGN KEY (`resident_id`) REFERENCES `residents`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 AUTO_INCREMENT=1 ;
+
+CREATE TABLE IF NOT EXISTS `document_prices` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `document_type` VARCHAR(100) NOT NULL,
+  `unit_price` DECIMAL(10,2) NOT NULL DEFAULT 20.00,
+  `updated_at` TIMESTAMP NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `document_type` (`document_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO `document_prices` (`document_type`, `unit_price`) VALUES
+  ('Barangay Clearance', 20.00),
+  ('Certificate of Residency', 20.00),
+  ('Certificate of Indigency', 20.00),
+  ('Certificate of Good Moral Character', 20.00),
+  ('Business Permit Endorsement', 20.00);
 
 CREATE TABLE IF NOT EXISTS `complaints` (
   `id` int(10) NOT NULL AUTO_INCREMENT,
@@ -99,6 +111,7 @@ CREATE TABLE IF NOT EXISTS `complaints` (
   `reference_no` varchar(50) NOT NULL,
   `resident_name` varchar(100) NOT NULL,
   `category` varchar(100) NOT NULL,
+  `severity` enum('low','medium','high','critical') NOT NULL DEFAULT 'medium',
   `location_text` varchar(150) NOT NULL,
   `description` text NOT NULL,
   `date_filed` varchar(30) NOT NULL,

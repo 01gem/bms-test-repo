@@ -21,15 +21,13 @@ $residentUsername = $_SESSION['resident_username'] ?? '';
 $residentProfile = [
   'fname' => '', 'lname' => '', 'address' => '', 'contact' => '', 'username' => $residentUsername,
   'profile_photo' => null, 'created_at' => null, 'birthdate' => null, 'civil_status' => null,
-  'purok_zone' => null, 'household_size' => null, 'number_of_dependents' => null,
-  'is_household_head' => null, 'is_solo_parent' => null, 'is_pwd' => null, 'is_4ps_member' => null,
-  'years_of_residency' => null, 'educational_attainment' => null, 'employment_status' => null,
-  'occupation' => null, 'monthly_income_bracket' => null, 'skills' => null,
-  'work_experience_years' => null, 'training_certifications' => null, 'work_availability' => null,
-  'has_drivers_license' => null
+  'purok_zone' => null, 'household_size' => null,
+  'is_solo_parent' => null, 'is_pwd' => null, 'is_4ps_member' => null,
+  'educational_attainment' => null, 'employment_status' => null,
+  'occupation' => null, 'training_certifications' => null, 'work_availability' => null
 ];
 $db = get_db();
-$profileStmt = $db->prepare('SELECT fname, lname, address, contact, username, profile_photo, created_at, birthdate, civil_status, purok_zone, household_size, number_of_dependents, is_household_head, is_solo_parent, is_pwd, is_4ps_member, years_of_residency, educational_attainment, employment_status, occupation, monthly_income_bracket, skills, work_experience_years, training_certifications, work_availability, has_drivers_license FROM residents WHERE id = ? LIMIT 1');
+$profileStmt = $db->prepare('SELECT fname, lname, address, contact, username, profile_photo, created_at, birthdate, civil_status, purok_zone, household_size, is_solo_parent, is_pwd, is_4ps_member, educational_attainment, employment_status, occupation, training_certifications, work_availability FROM residents WHERE id = ? LIMIT 1');
 if ($profileStmt) {
   $profileStmt->bind_param('i', $residentId);
   $profileStmt->execute();
@@ -171,14 +169,14 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
         <div class="stat-cards" id="dashStats"></div>
 
         <div class="dash-grid">
-          <div class="dash-card" id="recentRequestsCard">
+          <div class="dash-card">
             <div class="dc-head">
               <h3>Recent Requests</h3>
               <button class="dc-see-all" onclick="switchTab('requests')">See all →</button>
             </div>
             <div id="recentRequestsList"></div>
           </div>
-          <div class="dash-card" id="recentComplaintsCard">
+          <div class="dash-card">
             <div class="dc-head">
               <h3>Recent Complaints</h3>
               <button class="dc-see-all" onclick="switchTab('complaints')">See all →</button>
@@ -205,7 +203,7 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
             <div class="form-3col">
               <div class="field">
                 <label>Document Type</label>
-                <select class="form-input" required>
+                <select class="form-input" id="reqDocType" required>
                   <option value="" disabled selected>Select document</option>
                   <option>Barangay Clearance</option>
                   <option>Certificate of Residency</option>
@@ -216,7 +214,7 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
               </div>
               <div class="field">
                 <label>Purpose</label>
-                <select class="form-input" required>
+                <select class="form-input" id="reqPurpose" required>
                   <option value="" disabled selected>Select purpose</option>
                   <option>Employment</option>
                   <option>School Enrollment</option>
@@ -227,7 +225,18 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
               </div>
               <div class="field">
                 <label>Number of Copies</label>
-                <input type="number" class="form-input" min="1" max="5" value="1" />
+                <input type="number" class="form-input" id="reqCopies" min="1" max="5" value="1" />
+              </div>
+            </div>
+            <div class="card" id="reqPricingSummary" style="margin-top:12px;padding:14px 18px;background:var(--surface-2);border:1px solid var(--border)">
+              <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text-2)">
+                <span>Unit price</span><span id="reqUnitPrice">₱0.00</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text-2);margin-top:4px">
+                <span>Copies</span><span id="reqCopiesOut">1</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700;color:var(--text);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+                <span>Total</span><span id="reqTotalAmount">₱0.00</span>
               </div>
             </div>
             <div class="field" style="margin-top:12px;">
@@ -235,7 +244,7 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
               <textarea class="form-input" rows="3" placeholder="Any special instructions for this request..."></textarea>
             </div>
             <div class="form-actions">
-              <button type="submit" class="btn-submit-form">Submit Request</button>
+              <button type="submit" class="btn-submit-form" id="reqSubmitBtn" disabled>Submit Request</button>
               <button type="button" class="btn-cancel-form" id="cancelReqForm">Cancel</button>
             </div>
           </form>
@@ -262,6 +271,7 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
                   <th>Document Type</th>
                   <th>Purpose</th>
                   <th>Date Requested</th>
+                  <th>Amount</th>
                   <th>Status</th>
                   <th>Action</th>
                 </tr>
@@ -288,7 +298,7 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
             <div class="form-2col">
               <div class="field">
                 <label>Type of Concern</label>
-                <select class="form-input" required>
+                <select class="form-input" id="reqCategory" required>
                   <option value="" disabled selected>Select category</option>
                   <option>Road / Infrastructure</option>
                   <option>Noise / Public Disturbance</option>
@@ -299,12 +309,12 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
               </div>
               <div class="field">
                 <label>Specific Location</label>
-                <input type="text" class="form-input" placeholder="e.g. Corner Mabini & Rizal" required />
+                <input type="text" class="form-input" id="reqLocation" placeholder="e.g. Corner Mabini & Rizal" required />
               </div>
             </div>
             <div class="field" style="margin-top:12px;">
               <label>Description</label>
-              <textarea class="form-input" rows="4" placeholder="Describe the issue in detail..." required></textarea>
+              <textarea class="form-input" id="reqDescription" rows="4" placeholder="Describe the issue in detail..." required></textarea>
             </div>
             <div class="form-actions">
               <button type="submit" class="btn-submit-form">Submit Complaint</button>
@@ -366,17 +376,17 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
               <?php
                 $profileFields = [
                   'birthdate' => 'Birthdate', 'civil_status' => 'Civil Status', 'purok_zone' => 'Purok / Zone',
-                  'household_size' => 'Household Size', 'number_of_dependents' => 'Dependents',
-                  'is_household_head' => 'Household Head', 'is_solo_parent' => 'Solo Parent',
-                  'is_pwd' => 'PWD', 'is_4ps_member' => '4Ps Member', 'years_of_residency' => 'Years of Residency',
+                  'household_size' => 'Household Size',
+                  'is_solo_parent' => 'Solo Parent',
+                  'is_pwd' => 'PWD', 'is_4ps_member' => '4Ps Member',
                   'educational_attainment' => 'Educational Attainment', 'employment_status' => 'Employment Status',
-                  'occupation' => 'Occupation', 'monthly_income_bracket' => 'Income Bracket', 'skills' => 'Skills',
-                  'work_experience_years' => 'Work Experience (years)', 'training_certifications' => 'Certifications',
-                  'work_availability' => 'Work Availability', 'has_drivers_license' => "Driver's License"
+                  'occupation' => 'Occupation',
+                  'training_certifications' => 'Certifications',
+                  'work_availability' => 'Work Availability'
                 ];
                 foreach ($profileFields as $field => $label):
                   $value = $residentProfile[$field] ?? null;
-                  if (in_array($field, ['is_household_head', 'is_solo_parent', 'is_pwd', 'is_4ps_member', 'has_drivers_license'], true)) {
+                  if (in_array($field, ['is_solo_parent', 'is_pwd', 'is_4ps_member'], true)) {
                     $value = $value === null ? null : ((int)$value === 1 ? 'Yes' : 'No');
                   }
                   if ($field === 'birthdate' && $value) $value = date('F j, Y', strtotime($value));
@@ -402,11 +412,10 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
   </div>
   <div class="drawer-overlay" id="drawerOverlay"></div>
 
-  <script>
-    window.RESIDENT_ID = <?php echo json_encode($residentId); ?>;
-    window.RESIDENT_USERNAME = <?php echo json_encode($residentUsername); ?>;
-    window.RESIDENT_NAME = <?php echo json_encode($residentName); ?>;
-  </script>
+  <div class="modal-overlay" id="requestModal">
+    <div class="modal-box" id="requestModalBox"></div>
+  </div>
+
   <script src="../js/resident.js?v=<?= filemtime(__DIR__ . '/../js/resident.js') ?>"></script>
 </body>
 </html>

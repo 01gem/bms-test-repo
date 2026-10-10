@@ -7,6 +7,7 @@
  */
 
 require_once __DIR__ . '/../common.php';
+require_once __DIR__ . '/_shared.php';
 session_start();
 require_official_session();
 require_post();
@@ -63,7 +64,7 @@ if (!empty($input['final'])) {
 $sqlRules = [
   ['Student', "employment_status = 'Student'"],
   ['Retired', "employment_status = 'Retired'"],
-  ['No Skills Listed', "(occupation IS NULL OR TRIM(occupation) = '') AND (skills IS NULL OR TRIM(skills) = '')"],
+  ['No Skills Listed', "(occupation IS NULL OR TRIM(occupation) = '')"],
 ];
 $sqlClassified = 0;
 foreach ($sqlRules as [$category, $condition]) {
@@ -81,8 +82,8 @@ if ($sqlClassified > 0) {
 }
 
 // ── Gemini batch ──
-$stmt = $db->prepare("SELECT id, occupation, skills, educational_attainment, employment_status,
-  work_experience_years, training_certifications
+$stmt = $db->prepare("SELECT id, occupation, educational_attainment, employment_status,
+  training_certifications
   FROM residents WHERE $unclassifiedWhere ORDER BY id LIMIT " . WORKFORCE_BATCH_SIZE);
 if (!$stmt) json_error('Failed to prepare residents query.', 500);
 $rows = db_query_all($stmt);
@@ -95,10 +96,8 @@ if (!$rows) {
 $geminiPayload = array_map(fn(array $row) => [
   'id' => (int)$row['id'],
   'occupation' => (string)($row['occupation'] ?? ''),
-  'skills' => (string)($row['skills'] ?? ''),
   'educational_attainment' => (string)($row['educational_attainment'] ?? ''),
   'employment_status' => (string)($row['employment_status'] ?? ''),
-  'work_experience_years' => (int)($row['work_experience_years'] ?? 0),
   'training_certifications' => (string)($row['training_certifications'] ?? ''),
 ], $rows);
 
@@ -108,7 +107,7 @@ You classify barangay residents into workforce categories. Assign each resident 
 $categoryLines
 
 Rules:
-- Decide from occupation first, then skills, training_certifications, work_experience_years, educational_attainment, employment_status.
+- Decide from occupation first, then training_certifications, educational_attainment, employment_status.
 - Placeholder text such as "N/A", "none", or "-" carries no information; decide from the other fields.
 - Skilled Trades: welders, electricians, carpenters, mechanics, plumbers, masons, tailors, cooks, technicians and similar hands-on trades.
 - Unskilled Labor: general labor, helpers, construction laborers, janitorial, domestic work without a trade.
@@ -124,6 +123,8 @@ $userMessage = json_encode(['residents' => $geminiPayload], JSON_UNESCAPED_UNICO
 if ($userMessage === false) {
   json_error('Could not encode resident data for AI.', 500);
 }
+
+ai_throttle_or_die($db, $officialId, 'workforce', count($rows), 400);
 
 $result = ai_chat($userMessage, $systemPrompt, 'auto', true, 30);
 if (!$result['success']) {

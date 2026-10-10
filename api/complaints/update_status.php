@@ -21,6 +21,7 @@ $input = read_json_input();
 $id = (int)($input['id'] ?? 0);
 $status = trim((string)($input['status'] ?? ''));
 $officialNote = trim((string)($input['official_note'] ?? ''));
+$severity = trim((string)($input['severity'] ?? ''));
 
 if ($id <= 0 || $status === '') {
   json_error('Complaint id and status are required.');
@@ -29,6 +30,10 @@ if ($id <= 0 || $status === '') {
 $allowed = ['open', 'investigating', 'resolved'];
 if (!in_array($status, $allowed, true)) {
   json_error('Invalid status. Allowed values are: open, investigating, resolved.');
+}
+$allowedSeverity = ['low', 'medium', 'high', 'critical'];
+if ($severity !== '' && !in_array($severity, $allowedSeverity, true)) {
+  json_error('Invalid severity. Allowed values are: low, medium, high, critical.');
 }
 
 $db = get_db();
@@ -42,9 +47,15 @@ if (count($rows) === 0) {
 }
 $complaint = $rows[0];
 
-$stmt = $db->prepare('UPDATE complaints SET status = ?, official_note = ? WHERE id = ?');
-if (!$stmt) json_error('Failed to prepare complaint update.', 500);
-$stmt->bind_param('ssi', $status, $officialNote, $id);
+if ($severity !== '') {
+  $stmt = $db->prepare('UPDATE complaints SET status = ?, official_note = ?, severity = ? WHERE id = ?');
+  if (!$stmt) json_error('Failed to prepare complaint update.', 500);
+  $stmt->bind_param('sssi', $status, $officialNote, $severity, $id);
+} else {
+  $stmt = $db->prepare('UPDATE complaints SET status = ?, official_note = ? WHERE id = ?');
+  if (!$stmt) json_error('Failed to prepare complaint update.', 500);
+  $stmt->bind_param('ssi', $status, $officialNote, $id);
+}
 if (!$stmt->execute()) {
   json_db_error('Failed to update complaint', $stmt->error);
 }

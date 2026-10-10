@@ -47,9 +47,14 @@ if ($newStatus === 'cancelled' && !in_array($req['status'], ['pending', 'process
   json_error('Only pending or processing requests can be cancelled.');
 }
 
-$up = $db->prepare("UPDATE document_requests SET status = ? WHERE id = ?");
-if (!$up) json_error('Failed to prepare update.', 500);
 $rid = (int)$req['id'];
+if ($newStatus === 'completed') {
+  $up = $db->prepare("UPDATE document_requests SET status = ?, date_completed = NOW(), payment_status = CASE WHEN payment_status = 'unpaid' THEN 'paid' ELSE payment_status END WHERE id = ?");
+} else {
+  // Any move away from 'completed' clears the stamp — the server is the source of truth for the timestamp.
+  $up = $db->prepare("UPDATE document_requests SET status = ?, date_completed = NULL WHERE id = ?");
+}
+if (!$up) json_error('Failed to prepare update.', 500);
 $up->bind_param('si', $newStatus, $rid);
 if (!$up->execute()) json_db_error('Failed to update status', $up->error);
 $up->close();

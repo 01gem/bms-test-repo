@@ -17,11 +17,11 @@ if (empty($_SESSION['official_id'])) {
 $db = get_db();
 
 $sql = "SELECT r.id, r.fname, r.lname, r.address, r.contact, r.username, r.profile_photo, r.status,
-  r.birthdate, r.civil_status, r.purok_zone, r.household_size, r.number_of_dependents,
-  r.is_household_head, r.is_solo_parent, r.is_pwd, r.is_4ps_member, r.years_of_residency,
-  r.educational_attainment, r.employment_status, r.occupation, r.monthly_income_bracket,
-  r.skills, r.work_experience_years, r.training_certifications, r.work_availability,
-  r.has_drivers_license, r.skill_category,
+  r.birthdate, r.civil_status, r.purok_zone, r.household_size,
+  r.is_solo_parent, r.is_pwd, r.is_4ps_member,
+  r.educational_attainment, r.employment_status, r.occupation,
+  r.training_certifications, r.work_availability,
+  r.skill_category,
   r.household_id, r.relationship_to_household_head, r.profile_status,
   h.household_code,
   h.profile_status         AS household_profile_status,

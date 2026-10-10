@@ -34,6 +34,11 @@ let AUDIT_LOG = [];
 let ACTIVE_DOC_GEN_REQUEST = null;
 const FIXED_OFFICIAL_NAME = 'Hon. Erwin Astronomo';
 const FIXED_OFFICIAL_POSITION = 'Barangay Captain';
+function peso(n) {
+  return '₱' + Number(n || 0).toFixed(2);
+}
+let DOC_REQUEST_REPORT = null;
+let COMPLAINT_REPORT = null;
 
 const DOC_TEMPLATE_FIELDS = {
   'Barangay Clearance': ['full_name', 'age', 'civil_status', 'address', 'purpose', 'date_issued'],
@@ -227,6 +232,10 @@ function renderDashPendingReqs() {
   const el = document.getElementById('dashPendingReqs');
   if (!el) return;
   const pending = DOC_REQUESTS.filter(r => r.status === 'pending').slice(0,3);
+  if (!pending.length) {
+    el.innerHTML = '<p style="color:var(--text-3);font-size:13px;padding:12px 0">No pending document requests.</p>';
+    return;
+  }
   el.innerHTML = pending.map(r => `
     <div class="mini-row">
       <div class="mr-icon" style="background:#DBEAFE;color:#1976D2"><i class="fa-solid fa-file-lines"></i></div>
@@ -243,6 +252,10 @@ function renderDashOpenComplaints() {
   const el = document.getElementById('dashOpenComplaints');
   if (!el) return;
   const open = COMPLAINTS_ADMIN.filter(c => c.status === 'open' || c.status === 'investigating').slice(0,3);
+  if (!open.length) {
+    el.innerHTML = '<p style="color:var(--text-3);font-size:13px;padding:12px 0">No open complaints.</p>';
+    return;
+  }
   el.innerHTML = open.map(c => `
     <div class="mini-row">
       <div class="mr-icon" style="background:#FEE2E2;color:#EF4444"><i class="fa-solid fa-triangle-exclamation"></i></div>
@@ -259,7 +272,12 @@ function renderDashActivity() {
   const el = document.getElementById('dashActivity');
   if (!el) return;
   const COLORS = { 'Request Approved':'#059669', 'Request Submitted':'#1976D2', 'Announcement Posted':'#D97706', 'Complaint Filed':'#EF4444', 'Resident Verified':'#0D9488', 'Login':'#94A3B8', 'Status Updated':'#0EA5E9' };
-  el.innerHTML = AUDIT_LOG.slice(0,6).map(a => `
+  const recent = AUDIT_LOG.slice(0,6);
+  if (!recent.length) {
+    el.innerHTML = '<p style="color:var(--text-3);font-size:13px;padding:12px 0">No recent activity.</p>';
+    return;
+  }
+  el.innerHTML = recent.map(a => `
     <div class="activity-row">
       <div class="act-dot" style="background:${COLORS[a.action] || '#94A3B8'}"></div>
       <div class="act-text"><strong>${a.user}</strong> — ${a.action} in <strong>${a.module}</strong></div>
@@ -313,24 +331,23 @@ function filterResidents() {
 function renderDocRequests(data) {
   const tbody = document.getElementById('reqsBody');
   if (!tbody) return;
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-3);padding:32px;">No document requests found.</td></tr>`;
+    return;
+  }
   tbody.innerHTML = data.map(r => `
     <tr>
-      <td><code style="font-size:12px;color:var(--blue-mid)">${r.ref}</code></td>
-      <td style="font-weight:600">${r.resident}</td>
-      <td>${r.type}</td>
-      <td>${r.purpose}</td>
-      <td>${r.date}</td>
-      <td><span class="status-badge status-${r.status}">${r.status}</span></td>
-        <td class="action-column">
-          <div class="action-btns">
-            ${r.status === 'pending'    ? `<button class="btn-action process" onclick="openDocumentGenerationModal('${r.ref}')">Process</button>` : ''}
-            ${r.status === 'processing' ? `<button class="btn-action ready"   onclick="updateReqStatus('${r.ref}','ready')">Mark Ready</button>` : ''}
-            ${['pending', 'processing'].includes(r.status) ? `<button class="btn-action reject" onclick="cancelReq('${r.ref}')">Cancel Request</button>` : ''}
-            ${r.status === 'ready'      ? `<button class="btn-action approve" onclick="updateReqStatus('${r.ref}','completed')">Complete</button>` : ''}
-            ${r.status === 'ready'      ? `<button class="btn-action notify"  onclick="notifyPickupReady('${escapeAttribute(r.ref)}')">Notify via SMS</button>` : ''}
-            <button class="btn-action view" onclick="showRequestDetails(${r.id})">View</button>
-          </div>
-        </td>
+      <td><code style="font-size:12px;color:var(--blue-mid)">${escapeAttribute(r.ref)}</code></td>
+      <td style="font-weight:600">${escapeAttribute(r.resident)}</td>
+      <td>${escapeAttribute(r.type)}</td>
+      <td>${escapeAttribute(r.purpose)}</td>
+      <td>${escapeAttribute(r.date)}</td>
+      <td><span class="status-badge status-${escapeAttribute(r.status)}">${escapeAttribute(r.status)}</span></td>
+      <td class="action-column">
+        <div class="action-btns">
+          <button class="btn-action view" onclick="showRequestDetails(${r.id})">View</button>
+        </div>
+      </td>
     </tr>
   `).join('');
 }
@@ -350,10 +367,35 @@ async function updateReqStatus(ref, newStatus, officialNote = '') {
     await loadAuditLog();
     await refreshDashboard();
     showToastAdmin('Status Updated', data.message || `${ref} status set to ${newStatus}.`);
+    const modalEl = document.getElementById('actionModal');
+    if (modalEl?.classList.contains('show')) {
+      const fresh = DOC_REQUESTS.find(r => r.ref === ref);
+      if (fresh) showRequestDetails(fresh.id);
+    }
   } catch (err) {
     showToastAdmin('Update Failed', err.message);
   }
 }
+async function updateReqPayment(ref, paymentStatus) {
+  try {
+    const data = await fetchJson(`${API_BASE}/requests/update_payment.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference_no: ref, payment_status: paymentStatus })
+    });
+    await loadRequests();
+    await loadAuditLog();
+    showToastAdmin('Payment Updated', data.message || `${ref} payment set to ${paymentStatus}.`);
+    const modalEl = document.getElementById('actionModal');
+    if (modalEl?.classList.contains('show')) {
+      const fresh = DOC_REQUESTS.find(r => r.ref === ref);
+      if (fresh) showRequestDetails(fresh.id);
+    }
+  } catch (err) {
+    showToastAdmin('Payment Update Failed', err.message);
+  }
+}
+
 async function cancelReq(ref) {
   const reason = window.prompt('Brief reason for cancelling this request (required):');
   if (reason === null) return;
@@ -518,6 +560,12 @@ function showAiView(view) {
   if (view === 'registry') {
     rerollRegistryOrder();
   }
+  if (view === 'docreports') {
+    loadReports().catch(err => showToastAdmin('Report Load Failed', err.message));
+  }
+  if (view === 'complaintreports') {
+    loadComplaintReport().catch(err => showToastAdmin('Report Load Failed', err.message));
+  }
 }
 
 function initAiHub() {
@@ -527,6 +575,360 @@ function initAiHub() {
   document.querySelectorAll('.ai-back-btn').forEach(btn => {
     btn.addEventListener('click', () => showAiView(null));
   });
+}
+
+async function loadDocumentPrices() {
+  const data = await fetchJson(`${API_BASE}/document_prices/list.php`);
+  renderDocumentPrices(data.prices || []);
+}
+
+function renderDocumentPrices(prices) {
+  const body = document.getElementById('docPricesBody');
+  if (!body) return;
+  body.innerHTML = (prices || []).map(p => `
+    <tr>
+      <td style="font-weight:600">${escapeHtml(p.document_type)}</td>
+      <td>${peso(p.unit_price)}</td>
+      <td>${escapeHtml(p.updated_at || '—')}</td>
+      <td class="action-column">
+        <button type="button" class="btn-action process" onclick="editDocumentPrice(${Number(p.id)}, '${escapeAttribute(p.document_type)}', ${Number(p.unit_price)})">Edit</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="4" class="registry-empty">No prices configured.</td></tr>';
+}
+
+async function editDocumentPrice(id, type, current) {
+  const raw = window.prompt(`New unit price for ${type} (₱):`, Number(current).toFixed(2));
+  if (raw === null) return;
+  const price = Number(raw);
+  if (!Number.isFinite(price) || price < 0) {
+    showToastAdmin('Invalid Price', 'Enter a non-negative amount.');
+    return;
+  }
+  try {
+    await fetchJson(`${API_BASE}/document_prices/update.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, unit_price: price })
+    });
+    await loadDocumentPrices();
+    showToastAdmin('Price Updated', `${type} is now ${peso(price)}.`);
+  } catch (err) {
+    showToastAdmin('Price Update Failed', err.message);
+  }
+}
+
+async function loadRequestReport() {
+  const data = await fetchJson(`${API_BASE}/stats/requests_report.php`);
+  DOC_REQUEST_REPORT = data;
+  const t = data.totals || {};
+  const el = document.getElementById('docRequestStats');
+  if (el) {
+    el.innerHTML = [
+      { lbl: 'Total Requests',  val: String(t.request_count || 0), ico: 'fa-file-lines',         bg: '#DBEAFE', color: '#1976D2' },
+      { lbl: 'Total Copies',    val: String(t.total_copies || 0),  ico: 'fa-copy',               bg: '#E0E7FF', color: '#4338CA' },
+      { lbl: 'Gross Billed',    val: peso(t.gross_amount),         ico: 'fa-receipt',            bg: '#FEF3C7', color: '#D97706' },
+      { lbl: 'Total Collected', val: peso(t.collected_amount),     ico: 'fa-sack-dollar',        bg: '#DCFCE7', color: '#059669' },
+      { lbl: 'Pending Payment', val: peso(t.pending_amount),       ico: 'fa-hourglass-half',     bg: '#FEF9C3', color: '#B45309' },
+      { lbl: 'Waived',          val: peso(t.waived_amount),        ico: 'fa-hand-holding-heart', bg: '#F1F5F9', color: '#475569' },
+    ].map(s => `
+      <div class="stat-card">
+        <div class="sc-ico" style="background:${s.bg};color:${s.color}"><i class="fa-solid ${s.ico}"></i></div>
+        <div class="sc-data"><div class="sc-val">${s.val}</div><div class="sc-lbl">${s.lbl}</div></div>
+      </div>`).join('');
+  }
+
+  const monthlyBody = document.getElementById('docRequestMonthlyBody');
+  if (monthlyBody) {
+    monthlyBody.innerHTML = (data.monthly || []).map(m => `
+      <tr>
+        <td>${escapeHtml(m.ym || '—')}</td>
+        <td>${Number(m.request_count || 0)}</td>
+        <td>${Number(m.total_copies || 0)}</td>
+        <td>${peso(m.gross_amount)}</td>
+        <td style="font-weight:600;color:var(--success)">${peso(m.collected_amount)}</td>
+        <td>${peso(m.pending_amount)}</td>
+        <td>${peso(m.waived_amount)}</td>
+      </tr>`).join('') || '<tr><td colspan="7" class="registry-empty">No requests yet.</td></tr>';
+  }
+
+  const typeBody = document.getElementById('docRequestTypeBody');
+  if (typeBody) {
+    typeBody.innerHTML = (data.by_type || []).map(row => `
+      <tr>
+        <td style="font-weight:600">${escapeHtml(row.document_type)}</td>
+        <td>${Number(row.request_count || 0)}</td>
+        <td>${Number(row.total_copies || 0)}</td>
+        <td>${peso(row.gross_amount)}</td>
+        <td style="font-weight:600;color:var(--success)">${peso(row.collected_amount)}</td>
+      </tr>`).join('') || '<tr><td colspan="5" class="registry-empty">No data yet.</td></tr>';
+  }
+}
+
+async function loadComplaintReport() {
+  const data = await fetchJson(`${API_BASE}/stats/complaints_report.php`);
+  COMPLAINT_REPORT = data;
+  const t = data.totals || {};
+  const statsEl = document.getElementById('complaintStats');
+  if (statsEl) {
+    statsEl.innerHTML = [
+      { lbl: 'Total Complaints', val: String(t.total || 0),          ico: 'fa-flag',             bg: '#FEE2E2', color: '#EF4444' },
+      { lbl: 'Open',             val: String(t.open || 0),           ico: 'fa-door-open',        bg: '#FEF3C7', color: '#B45309' },
+      { lbl: 'Investigating',    val: String(t.investigating || 0),  ico: 'fa-magnifying-glass', bg: '#E0F2FE', color: '#0284C7' },
+      { lbl: 'Resolved',         val: String(t.resolved || 0),       ico: 'fa-circle-check',     bg: '#DCFCE7', color: '#059669' },
+    ].map(s => `
+      <div class="stat-card">
+        <div class="sc-ico" style="background:${s.bg};color:${s.color}"><i class="fa-solid ${s.ico}"></i></div>
+        <div class="sc-data"><div class="sc-val">${s.val}</div><div class="sc-lbl">${s.lbl}</div></div>
+      </div>`).join('');
+  }
+
+  const renderBars = (id, rows, keyName) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const max = rows.reduce((m, r) => Math.max(m, Number(r.count || 0)), 0);
+    el.innerHTML = rows.map(r => {
+      const pct = max ? Math.round((Number(r.count) / max) * 100) : 0;
+      return `<div class="workforce-bar-row">
+        <span class="workforce-bar-label">${escapeHtml(r[keyName])}</span>
+        <span class="workforce-bar-track"><span class="workforce-bar-fill" style="width:${pct}%"></span></span>
+        <span class="workforce-bar-count">${Number(r.count || 0)}</span>
+      </div>`;
+    }).join('') || '<p class="workforce-empty">No data.</p>';
+  };
+  renderBars('complaintByCategory', data.by_category || [], 'category');
+  renderBars('complaintBySeverity', data.by_severity || [], 'severity');
+
+  const crossBody = document.getElementById('complaintCrossBody');
+  if (crossBody) {
+    const map = {};
+    (data.cross || []).forEach(r => {
+      map[r.category] ??= { low: 0, medium: 0, high: 0, critical: 0, total: 0 };
+      map[r.category][r.severity] = Number(r.count);
+      map[r.category].total += Number(r.count);
+    });
+    const rows = Object.entries(map).sort((a, b) => b[1].total - a[1].total);
+    crossBody.innerHTML = rows.map(([cat, v]) => `
+      <tr>
+        <td style="font-weight:600">${escapeHtml(cat)}</td>
+        <td>${v.low}</td><td>${v.medium}</td><td>${v.high}</td><td>${v.critical}</td>
+        <td style="font-weight:700">${v.total}</td>
+      </tr>`).join('') || '<tr><td colspan="6" class="registry-empty">No complaints yet.</td></tr>';
+  }
+
+  const rankBody = document.getElementById('complaintRankingBody');
+  if (rankBody) {
+    rankBody.innerHTML = (data.monthly_rank || []).map(r => `
+      <tr>
+        <td>${escapeHtml(r.ym || '—')}</td>
+        <td>#${Number(r.rn || 0)}</td>
+        <td style="font-weight:600">${escapeHtml(r.category || '')}</td>
+        <td>${Number(r.count || 0)}</td>
+      </tr>`).join('') || '<tr><td colspan="4" class="registry-empty">No complaints yet.</td></tr>';
+  }
+}
+
+async function loadReports() {
+  await Promise.all([
+    loadRequestReport(),
+    loadComplaintReport(),
+    loadDocumentPrices(),
+  ]);
+}
+
+function renderAiCommentaryBox(targetId, payload) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  if (!payload) {
+    el.className = 'ai-echo-response';
+    el.textContent = 'No commentary generated yet.';
+    return;
+  }
+  const block = (title, items) => items && items.length
+    ? `<div style="margin-top:10px"><div style="font-weight:700;color:var(--text);font-size:13px;margin-bottom:4px">${title}</div>
+         <ul style="margin:0;padding-left:18px;color:var(--text-2);font-size:13px">${items.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul></div>`
+    : '';
+  el.className = 'ai-echo-response is-success';
+  el.innerHTML = `
+    <div style="font-size:14px;color:var(--text);line-height:1.6">${escapeHtml(payload.summary || '')}</div>
+    ${block('Most requested types', payload.most_requested_types)}
+    ${block('Top issues', payload.top_issues)}
+    ${block('Patterns', payload.patterns)}
+    ${block('Recommendations', payload.recommendations)}
+    ${payload.model ? `<div style="margin-top:10px;color:var(--text-3);font-size:11px">Model: ${escapeHtml(payload.model)}</div>` : ''}
+  `;
+}
+
+async function runDocumentRequestAnalysis(button) {
+  const out = document.getElementById('docReportsAiOutput');
+  button.disabled = true;
+  if (out) { out.className = 'ai-echo-response is-loading'; out.textContent = 'Analyzing document-request report…'; }
+  try {
+    const data = await fetchJson(`${API_BASE}/ai/analyze_document_requests.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    if (data.reason === 'no_data') {
+      if (out) { out.className = 'ai-echo-response'; out.textContent = 'No document requests to analyze yet.'; }
+      return;
+    }
+    renderAiCommentaryBox('docReportsAiOutput', { ...data.analysis, model: data.model });
+  } catch (err) {
+    if (out) { out.className = 'ai-echo-response is-error'; out.textContent = `Analysis failed: ${err.message}`; }
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function runComplaintAnalysis(button) {
+  const out = document.getElementById('complaintReportsAiOutput');
+  button.disabled = true;
+  if (out) { out.className = 'ai-echo-response is-loading'; out.textContent = 'Analyzing complaints report…'; }
+  try {
+    const data = await fetchJson(`${API_BASE}/ai/analyze_complaints.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    if (data.reason === 'no_data') {
+      if (out) { out.className = 'ai-echo-response'; out.textContent = 'No complaints to analyze yet.'; }
+      return;
+    }
+    renderAiCommentaryBox('complaintReportsAiOutput', { ...data.analysis, model: data.model });
+  } catch (err) {
+    if (out) { out.className = 'ai-echo-response is-error'; out.textContent = `Analysis failed: ${err.message}`; }
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function csvEscape(v) {
+  let s = String(v ?? '');
+  if (/^[=@\t\r]/.test(s) || (/^[+\-]/.test(s) && !/^[+\-]?[\d\s()-]+$/.test(s))) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function downloadCsv(filename, rows) {
+  const lines = rows.map(r => r.map(csvEscape).join(','));
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function exportDocumentRequestCsv() {
+  if (!DOC_REQUEST_REPORT) {
+    showToastAdmin('Nothing to Export', 'Load the report first.');
+    return;
+  }
+  const d = DOC_REQUEST_REPORT;
+  const stamp = new Date().toISOString().slice(0, 10);
+  const rows = [];
+
+  rows.push(['Document Request Report']);
+  rows.push(['Generated', new Date().toLocaleString()]);
+  rows.push([]);
+  rows.push(['TOTAL']);
+  rows.push(['Metric', 'Value']);
+  rows.push(['Total Requests',  d.totals?.request_count ?? 0]);
+  rows.push(['Total Copies',    d.totals?.total_copies ?? 0]);
+  rows.push(['Gross Billed',    Number(d.totals?.gross_amount || 0).toFixed(2)]);
+  rows.push(['Collected',       Number(d.totals?.collected_amount || 0).toFixed(2)]);
+  rows.push(['Pending',         Number(d.totals?.pending_amount || 0).toFixed(2)]);
+  rows.push(['Waived',          Number(d.totals?.waived_amount || 0).toFixed(2)]);
+  rows.push([]);
+
+  rows.push(['MONTHLY SUMMARY']);
+  rows.push(['Month', 'Requests', 'Copies', 'Gross', 'Collected', 'Pending', 'Waived']);
+  (d.monthly || []).forEach(m => rows.push([
+    m.ym || '',
+    Number(m.request_count || 0),
+    Number(m.total_copies || 0),
+    Number(m.gross_amount || 0).toFixed(2),
+    Number(m.collected_amount || 0).toFixed(2),
+    Number(m.pending_amount || 0).toFixed(2),
+    Number(m.waived_amount || 0).toFixed(2),
+  ]));
+  rows.push([]);
+
+  rows.push(['BY DOCUMENT TYPE']);
+  rows.push(['Document', 'Requests', 'Copies', 'Gross', 'Collected']);
+  (d.by_type || []).forEach(row => rows.push([
+    row.document_type || '',
+    Number(row.request_count || 0),
+    Number(row.total_copies || 0),
+    Number(row.gross_amount || 0).toFixed(2),
+    Number(row.collected_amount || 0).toFixed(2),
+  ]));
+
+  downloadCsv(`document-request-report-${stamp}.csv`, rows);
+}
+
+function exportComplaintCsv() {
+  if (!COMPLAINT_REPORT) {
+    showToastAdmin('Nothing to Export', 'Load the report first.');
+    return;
+  }
+  const d = COMPLAINT_REPORT;
+  const stamp = new Date().toISOString().slice(0, 10);
+  const rows = [];
+
+  rows.push(['Complaints Report']);
+  rows.push(['Generated', new Date().toLocaleString()]);
+  rows.push([]);
+  rows.push(['TOTAL']);
+  rows.push(['Metric', 'Value']);
+  rows.push(['Total',         d.totals?.total ?? 0]);
+  rows.push(['Open',          d.totals?.open ?? 0]);
+  rows.push(['Investigating', d.totals?.investigating ?? 0]);
+  rows.push(['Resolved',      d.totals?.resolved ?? 0]);
+  rows.push([]);
+
+  rows.push(['BY CATEGORY']);
+  rows.push(['Category', 'Count']);
+  (d.by_category || []).forEach(r => rows.push([r.category || '', Number(r.count || 0)]));
+  rows.push([]);
+
+  rows.push(['BY SEVERITY']);
+  rows.push(['Severity', 'Count']);
+  (d.by_severity || []).forEach(r => rows.push([r.severity || '', Number(r.count || 0)]));
+  rows.push([]);
+
+  rows.push(['CATEGORY × SEVERITY']);
+  rows.push(['Category', 'Low', 'Medium', 'High', 'Critical', 'Total']);
+  const map = {};
+  (d.cross || []).forEach(r => {
+    map[r.category] ??= { low: 0, medium: 0, high: 0, critical: 0, total: 0 };
+    map[r.category][r.severity] = Number(r.count);
+    map[r.category].total += Number(r.count);
+  });
+  Object.entries(map).forEach(([cat, v]) => rows.push([cat, v.low, v.medium, v.high, v.critical, v.total]));
+  rows.push([]);
+
+  rows.push(['MONTHLY RANKING (Top 5 per month)']);
+  rows.push(['Month', 'Rank', 'Category', 'Count']);
+  (d.monthly_rank || []).forEach(r => rows.push([r.ym || '', Number(r.rn || 0), r.category || '', Number(r.count || 0)]));
+
+  downloadCsv(`complaints-report-${stamp}.csv`, rows);
+}
+
+function initReportTiles() {
+  document.getElementById('docReportsAiBtn')?.addEventListener('click', e => runDocumentRequestAnalysis(e.currentTarget));
+  document.getElementById('docReportsRefreshBtn')?.addEventListener('click', () => {
+    loadReports().catch(err => showToastAdmin('Refresh Failed', err.message));
+  });
+  document.getElementById('docReportsExportBtn')?.addEventListener('click', exportDocumentRequestCsv);
+
+  document.getElementById('complaintReportsAiBtn')?.addEventListener('click', e => runComplaintAnalysis(e.currentTarget));
+  document.getElementById('complaintReportsRefreshBtn')?.addEventListener('click', () => {
+    loadComplaintReport().catch(err => showToastAdmin('Refresh Failed', err.message));
+  });
+  document.getElementById('complaintReportsExportBtn')?.addEventListener('click', exportComplaintCsv);
 }
 
 function initAiEchoTest() {
@@ -586,7 +988,7 @@ function residentAgeYears(birthdate) {
 
 function workforceNeedsGemini(resident) {
   if (resident.employment_status === 'Student' || resident.employment_status === 'Retired') return false;
-  return Boolean(String(resident.occupation || '').trim() || String(resident.skills || '').trim());
+  return Boolean(String(resident.occupation || '').trim());
 }
 
 function workforceDistribution(residents, getValue, order = null, emptyLabel = 'Not provided') {
@@ -789,22 +1191,29 @@ async function notifyPickupReady(ref) {
     showToastAdmin('Notify Failed', err.message);
   }
 }
+function refreshDocRequestsTable() {
+  const q = (document.getElementById('reqSearch')?.value || '').toLowerCase();
+  const s = document.getElementById('reqStatusFilter')?.value || 'all';
+  renderDocRequests(DOC_REQUESTS.filter(r =>
+    (r.resident.toLowerCase().includes(q) || r.ref.toLowerCase().includes(q)) &&
+    (s === 'all' || r.status === s)
+  ));
+}
+
 function initDocRequestsTable() {
-  renderDocRequests(DOC_REQUESTS);
-  document.getElementById('reqSearch')?.addEventListener('input', () => {
-    const q = document.getElementById('reqSearch').value.toLowerCase();
-    const s = document.getElementById('reqStatusFilter').value;
-    renderDocRequests(DOC_REQUESTS.filter(r => (r.resident.toLowerCase().includes(q) || r.ref.toLowerCase().includes(q)) && (s === 'all' || r.status === s)));
-  });
-  document.getElementById('reqStatusFilter')?.addEventListener('change', () => {
-    document.getElementById('reqSearch').dispatchEvent(new Event('input'));
-  });
+  refreshDocRequestsTable();
+  document.getElementById('reqSearch')?.addEventListener('input', refreshDocRequestsTable);
+  document.getElementById('reqStatusFilter')?.addEventListener('change', refreshDocRequestsTable);
 }
 
 // ── COMPLAINTS ADMIN ──────────────────────
 function renderComplaintsAdmin(data) {
   const el = document.getElementById('complaintsAdminList');
   if (!el) return;
+  if (!data.length) {
+    el.innerHTML = '<p style="color:var(--text-3);font-size:13px;padding:12px 0">No complaints found.</p>';
+    return;
+  }
   el.innerHTML = data.map(c => `
     <div class="complaint-admin-row" id="comp-${c.ref.replace('#','')}">
       <div class="ca-top">
@@ -825,6 +1234,12 @@ function renderComplaintsAdmin(data) {
           <option value="investigating" ${c.status==='investigating' ?'selected':''}>Investigating</option>
           <option value="resolved"      ${c.status==='resolved'      ?'selected':''}>Resolved</option>
         </select>
+        <select class="ca-status-select" id="compSeverity-${c.id}" aria-label="Severity">
+          <option value="low"      ${c.severity==='low'      ?'selected':''}>Low</option>
+          <option value="medium"   ${c.severity==='medium'   ?'selected':''}>Medium</option>
+          <option value="high"     ${c.severity==='high'     ?'selected':''}>High</option>
+          <option value="critical" ${c.severity==='critical' ?'selected':''}>Critical</option>
+        </select>
         <input type="text" class="ca-note-input" id="compNote-${c.id}" placeholder="Add official note…" value="${c.note}" />
         <button class="btn-action resolve" onclick="updateComplaint(${c.id})">Save</button>
         <button class="btn-action view" onclick="document.getElementById('actionModalBox').classList.remove('detail-modal-box'); showModal('Complaint Detail','${c.ref} — ${c.cat} — Filed by ${c.filer}')">View</button>
@@ -837,12 +1252,13 @@ async function updateComplaint(id) {
   if (!c) return;
   const status = document.getElementById(`compStatus-${id}`).value;
   const officialNote = document.getElementById(`compNote-${id}`).value;
+  const severity = document.getElementById(`compSeverity-${id}`)?.value || c.severity || 'medium';
   try {
     const resolving = status === 'resolved';
     const data = await fetchJson(`${API_BASE}/complaints/${resolving ? 'notify_resolved' : 'update_status'}.php`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, status, official_note: officialNote })
+      body: JSON.stringify({ id, status, official_note: officialNote, severity })
     });
     await loadComplaints();
     await loadAuditLog();
@@ -870,22 +1286,15 @@ function mapResidentRow(row) {
     civil_status: row.civil_status || '',
     purok_zone: row.purok_zone || '',
     household_size: row.household_size ?? 1,
-    number_of_dependents: row.number_of_dependents ?? 0,
-    is_household_head: Number(row.is_household_head || 0),
     is_solo_parent: Number(row.is_solo_parent || 0),
     is_pwd: Number(row.is_pwd || 0),
     is_4ps_member: Number(row.is_4ps_member || 0),
-    years_of_residency: row.years_of_residency ?? 0,
     // Profiling: Livelihood & Skills
     educational_attainment: row.educational_attainment || '',
     employment_status: row.employment_status || '',
     occupation: row.occupation || '',
-    monthly_income_bracket: row.monthly_income_bracket || '',
-    skills: row.skills || '',
-    work_experience_years: row.work_experience_years ?? 0,
     training_certifications: row.training_certifications || '',
     work_availability: row.work_availability || '',
-    has_drivers_license: Number(row.has_drivers_license || 0),
     skill_category: row.skill_category || '',
     household_code: row.household_code || '',
     household_profile_status: row.household_profile_status || '',
@@ -937,6 +1346,9 @@ function mapRequestRow(row) {
     purpose: row.purpose,
     date: row.date_requested,
     status: row.status,
+    copies: Number(row.copies || 1),
+    totalAmount: Number(row.total_amount || 0),
+    paymentStatus: row.payment_status || 'unpaid',
     generatedDocumentPath: row.generated_document_path || '',
     dateCompleted: row.date_completed || row.date_processed || ''
   };
@@ -948,6 +1360,7 @@ function mapComplaintRow(row) {
     ref: row.reference_no,
     filer: row.resident_name,
     cat: row.category,
+    severity: row.severity || 'medium',
     loc: row.location_text,
     date: row.date_filed,
     status: row.status,
@@ -994,49 +1407,45 @@ async function loadResidents() {
   renderWorkforceInsights();
 }
 
-const AI_ASSESS_BATCH_SIZE = 20;
+const VULNERABILITY_REPORTS = new Map(); // household_id -> report object
 
-async function runAiAssessment(ids, { context, audit = null, onProgress } = {}) {
-  const results = new Map();
-  const assessBatches = async (pending, sendAudit) => {
-    for (let i = 0; i < pending.length; i += AI_ASSESS_BATCH_SIZE) {
-      const data = await fetchJson(`${API_BASE}/ai/assess_residents.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          context,
-          resident_ids: pending.slice(i, i + AI_ASSESS_BATCH_SIZE),
-          audit: sendAudit && i === 0 ? audit : null
-        })
-      });
-      (data.assessments || []).forEach(assessment => results.set(Number(assessment.id), assessment));
-      onProgress?.(results.size, ids.length, results);
-    }
-  };
-  await assessBatches(ids, true);
-  const missing = ids.filter(id => !results.has(id));
-  if (missing.length) await assessBatches(missing, false);
-  return results;
+function reportCellHtml(report, householdId, householdUpdatedAt) {
+  if (!report) return '<span class="ai-tier ai-tier-none">No opinion yet</span>';
+  if (report.status === 'unprofiled') return '<span class="ai-tier ai-tier-moderate">Awaiting profile</span>';
+  if (report.status === 'incomplete') return '<span class="ai-tier ai-tier-moderate">Profile incomplete</span>';
+  if (report.status === 'failed') return '<span class="ai-tier ai-tier-none">Commentary unavailable</span>';
+
+  const clearBtn = householdId
+    ? `<button type="button" class="ai-report-clear" title="Clear commentary"
+         onclick="event.stopPropagation(); clearVulnerabilityReport(${householdId})">&times;</button>`
+    : '';
+
+  const generatedAt = report.generated_at ? new Date(report.generated_at) : null;
+  const householdAt = householdUpdatedAt ? new Date(householdUpdatedAt) : null;
+  const stale = generatedAt && householdAt && generatedAt < householdAt;
+  const ageLabel = generatedAt
+    ? `<div class="ai-flags">Generated ${escapeHtml(generatedAt.toLocaleDateString())}${stale ? ' · stale' : ''}</div>`
+    : '';
+
+  const summary = escapeHtml(report.summary || '');
+  const deprivations = (report.key_deprivations || []).join(', ');
+  const gaps = (report.data_gaps || []).length
+    ? `<div class="ai-flags">Data gaps: ${escapeHtml(report.data_gaps.join(', '))}</div>`
+    : '';
+  return `<div class="ai-reason">${summary}${clearBtn}</div>`
+    + (deprivations ? `<div class="ai-flags">${escapeHtml(deprivations)}</div>` : '')
+    + gaps
+    + ageLabel;
 }
 
-function aiTierBadge(assessment) {
-  if (!assessment) return '<span class="ai-tier ai-tier-none">Not assessed</span>';
-  return `<span class="ai-tier ai-tier-${assessment.tier.toLowerCase()}">${escapeHtml(assessment.tier)} · ${Number(assessment.ai_score) || 0}</span>`;
-}
-
-function aiAssessmentCell(assessment) {
-  if (!assessment) return aiTierBadge(null);
-  const flags = (assessment.flags || []).join(', ');
-  return `${aiTierBadge(assessment)}
-    <div class="ai-reason">${escapeHtml(assessment.reason || '')}</div>
-    ${flags ? `<div class="ai-flags">${escapeHtml(flags)}</div>` : ''}`;
+function aiAssessmentCell(row) {
+  if (!row.householdId) return '<span class="ai-tier ai-tier-none">No household profile</span>';
+  return reportCellHtml(VULNERABILITY_REPORTS.get(row.householdId), row.householdId, row.householdUpdatedAt);
 }
 
 const REGISTRY_PAGE_SIZE = 20;
 let REGISTRY_PAGE = 1;
 let REGISTRY_ORDER = new Map();
-let REGISTRY_SORT_BY_AI = false;
-const AI_ASSESSMENTS = new Map();
 
 function registryOrderKey(resident) {
   if (!REGISTRY_ORDER.has(resident.dbId)) REGISTRY_ORDER.set(resident.dbId, Math.random());
@@ -1045,7 +1454,6 @@ function registryOrderKey(resident) {
 
 function rerollRegistryOrder() {
   REGISTRY_ORDER = new Map();
-  REGISTRY_SORT_BY_AI = false;
   REGISTRY_PAGE = 1;
   renderVulnerabilityRegistry();
 }
@@ -1055,6 +1463,38 @@ function activeResidents() {
   return RESIDENTS.filter(resident => resident.status === 'active');
 }
 
+function parseDeprivationsFromJson(raw) {
+  if (!raw) return [];
+  try {
+    const decoded = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const inds = decoded && decoded.indicators;
+    if (!inds) return [];
+    return Object.entries(inds).filter(([, v]) => v === 1).map(([k]) => k);
+  } catch { return []; }
+}
+
+// One row per active resident, resolved against its household so both registries agree.
+function enrichedRegistryRows() {
+  const householdsById = new Map(HOUSEHOLD_REGISTRY.map(h => [Number(h.id), h]));
+  return activeResidents().map(r => {
+    const h = r.household_id ? householdsById.get(Number(r.household_id)) : null;
+    return {
+      resident: r,
+      householdId: h ? Number(h.id) : (r.household_id ? Number(r.household_id) : null),
+      householdUpdatedAt: h ? h.updated_at : null,
+      name: r.name,
+      purok: r.purok_zone,
+      code: h ? h.code : r.household_code,
+      status: h ? h.mpi_status : r.mpi_status,
+      score: h ? h.mpi_score : r.mpi_score,
+      deprivations: h ? parseDeprivationsFromJson(h.mpi_indicators_json) : r.mpi_deprivations,
+      income: h ? h.income_poverty_status : r.income_poverty_status,
+    };
+  });
+}
+
+// Keep keys in sync with api/ai/generate_vulnerability_report.php's MPI_INDICATOR_LABELS.
+// The values may diverge intentionally, but the key set must match.
 const MPI_INDICATOR_LABELS = {
   school_attendance: 'Out-of-school children',
   educational_attainment: 'Low education',
@@ -1071,30 +1511,30 @@ const MPI_INDICATOR_LABELS = {
   working_children: 'Child labor',
 };
 
-function priorityStatusBadge(resident) {
-  if (!resident.household_id) return '<span class="ai-tier ai-tier-none">Unprofiled</span>';
-  const status = resident.mpi_status;
-  const score = resident.mpi_score === null ? '' : ` · ${Number(resident.mpi_score).toFixed(4)}`;
+function priorityStatusBadge(row) {
+  if (!row.householdId) return '<span class="ai-tier ai-tier-none">Unprofiled</span>';
+  const status = row.status;
+  const score = row.score === null || row.score === undefined ? '' : ` · ${Number(row.score).toFixed(4)}`;
   if (status === 'poor')      return `<span class="ai-tier ai-tier-critical">Poor${score}</span>`;
   if (status === 'not_poor')  return `<span class="ai-tier ai-tier-low">Not poor${score}</span>`;
   if (status === 'incomplete')return '<span class="ai-tier ai-tier-moderate">Incomplete</span>';
   return '<span class="ai-tier ai-tier-none">No MPI data</span>';
 }
 
-function priorityIndicatorsCell(resident) {
-  const list = resident.mpi_deprivations || [];
+function priorityIndicatorsCell(row) {
+  const list = row.deprivations || [];
   if (!list.length) {
-    if (!resident.household_id) return '<span style="color:var(--text-3)">No household profile</span>';
-    if (resident.mpi_status === 'not_poor') return '<span style="color:var(--text-3)">No deprivations</span>';
-    if (resident.mpi_status === 'incomplete') return '<span style="color:var(--text-3)">Assessment incomplete</span>';
+    if (!row.householdId) return '<span style="color:var(--text-3)">No household profile</span>';
+    if (row.status === 'not_poor') return '<span style="color:var(--text-3)">No deprivations</span>';
+    if (row.status === 'incomplete') return '<span style="color:var(--text-3)">Assessment incomplete</span>';
     return '<span style="color:var(--text-3)">—</span>';
   }
   return escapeHtml(list.map(n => MPI_INDICATOR_LABELS[n] || n).join(', '));
 }
 
-function householdCell(resident) {
-  if (!resident.household_code) return '<span style="color:var(--text-3)">—</span>';
-  return `<code>${escapeHtml(resident.household_code)}</code>`;
+function householdCell(row) {
+  if (!row.code) return '<span style="color:var(--text-3)">—</span>';
+  return `<code>${escapeHtml(row.code)}</code>`;
 }
 
 function renderVulnerabilityRegistry() {
@@ -1102,30 +1542,24 @@ function renderVulnerabilityRegistry() {
   const filter = document.getElementById('vulnerabilityPurokFilter');
   if (!tbody || !filter) return;
 
-  const residents = activeResidents();
-  const puroks = [...new Set(residents.map(r => r.purok_zone).filter(Boolean))].sort();
+  const allRows = enrichedRegistryRows();
+  const puroks = [...new Set(allRows.map(r => r.purok).filter(Boolean))].sort();
   const selected = filter.value;
   filter.innerHTML = '<option value="all">All Puroks</option>'
     + puroks.map(p => `<option value="${escapeAttribute(p)}">${escapeHtml(p)}</option>`).join('');
   filter.value = puroks.includes(selected) ? selected : 'all';
 
   const statusRank = { poor: 0, incomplete: 1, not_poor: 2, '': 3 };
-  const rows = residents
-    .filter(r => filter.value === 'all' || r.purok_zone === filter.value)
+  const rows = allRows
+    .filter(r => filter.value === 'all' || r.purok === filter.value)
     .sort((a, b) => {
-      if (REGISTRY_SORT_BY_AI) {
-        const aiA = AI_ASSESSMENTS.get(a.dbId);
-        const aiB = AI_ASSESSMENTS.get(b.dbId);
-        if (aiA && aiB && aiA.ai_score !== aiB.ai_score) return aiB.ai_score - aiA.ai_score;
-        if (!!aiA !== !!aiB) return aiA ? -1 : 1;
-      }
-      const rankA = statusRank[a.mpi_status] ?? 3;
-      const rankB = statusRank[b.mpi_status] ?? 3;
+      const rankA = statusRank[a.status] ?? 3;
+      const rankB = statusRank[b.status] ?? 3;
       if (rankA !== rankB) return rankA - rankB;
-      const scoreA = a.mpi_score === null ? -1 : a.mpi_score;
-      const scoreB = b.mpi_score === null ? -1 : b.mpi_score;
+      const scoreA = a.score === null || a.score === undefined ? -1 : a.score;
+      const scoreB = b.score === null || b.score === undefined ? -1 : b.score;
       if (scoreA !== scoreB) return scoreB - scoreA;
-      return registryOrderKey(a) - registryOrderKey(b);
+      return registryOrderKey(a.resident) - registryOrderKey(b.resident);
     });
 
   const totalPages = Math.max(1, Math.ceil(rows.length / REGISTRY_PAGE_SIZE));
@@ -1141,49 +1575,260 @@ function renderVulnerabilityRegistry() {
   tbody.innerHTML = pageRows.length ? pageRows.map(r => `
     <tr class="vulnerability-registry-entry">
       <td style="font-weight:600">${escapeHtml(r.name)}</td>
-      <td>${escapeHtml(r.purok_zone || 'Not provided')}</td>
+      <td>${escapeHtml(r.purok || 'Not provided')}</td>
       <td>${householdCell(r)}</td>
       <td>${priorityStatusBadge(r)}</td>
       <td>${priorityIndicatorsCell(r)}</td>
-      <td class="ai-assessment-cell">${aiAssessmentCell(AI_ASSESSMENTS.get(r.dbId))}</td>
+      <td class="ai-assessment-cell">${aiAssessmentCell(r)}</td>
     </tr>`).join('')
     : '<tr><td colspan="6" class="registry-empty">No residents match this Purok.</td></tr>';
+}
+
+const AI_BATCH_SIZE = 10;
+const AI_MAX_PASSES = 4;
+const AI_BACKOFF_MS = [0, 2000, 8000, 20000]; // wait before pass N
+
+async function generateHouseholdCommentaries(householdIds, onProgress) {
+  const stats = { successCount: 0, unprofiledCount: 0, incompleteCount: 0, failedCount: 0, lastModel: null };
+  const total = householdIds.length;
+  let done = 0;
+
+  const commitResult = (hid, r, batchModel) => {
+    if (r.reason === 'unprofiled') {
+      VULNERABILITY_REPORTS.set(hid, { status: 'unprofiled' });
+      stats.unprofiledCount++;
+      return true;
+    }
+    if (r.reason === 'incomplete') {
+      VULNERABILITY_REPORTS.set(hid, { status: 'incomplete' });
+      stats.incompleteCount++;
+      return true;
+    }
+    if (r.report) {
+      VULNERABILITY_REPORTS.set(hid, { status: 'ok', ...r.report, model: r.model || batchModel });
+      stats.lastModel = r.model || batchModel || stats.lastModel;
+      stats.successCount++;
+      return true;
+    }
+    return false; // 'failed' | 'not_found' | 'ai_skipped' — caller decides
+  };
+
+  const runPass = async (ids) => {
+    const retryIds = [];
+    for (let i = 0; i < ids.length; i += AI_BATCH_SIZE) {
+      const batch = ids.slice(i, i + AI_BATCH_SIZE);
+      let data = null;
+      try {
+        data = await fetchJson(`${API_BASE}/ai/generate_vulnerability_reports_batch.php`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ household_ids: batch }),
+        });
+      } catch (err) {
+        if (String(err && err.message || '').includes('Hourly AI budget reached')) throw err;
+        batch.forEach(id => retryIds.push(Number(id)));
+        continue;
+      }
+      if (data.model) stats.lastModel = data.model;
+      const byId = new Map();
+      (data.results || []).forEach(r => byId.set(Number(r.household_id), r));
+
+      batch.forEach(id => {
+        const hid = Number(id);
+        const r = byId.get(hid);
+        if (!r) { retryIds.push(hid); return; }
+        if (commitResult(hid, r, data.model)) done++;
+        else retryIds.push(hid);
+      });
+      onProgress?.(done, total);
+      renderHouseholdRegistry();
+      renderVulnerabilityRegistry();
+    }
+    return retryIds;
+  };
+
+  // Bounded backoff: up to 4 passes, waits [0, 2s, 8s, 20s]. Total wall time
+  // worst case ~30s per Generate Reports click.
+  let pending = householdIds;
+  for (let pass = 0; pass < AI_MAX_PASSES && pending.length; pass++) {
+    if (AI_BACKOFF_MS[pass] > 0) {
+      await new Promise(r => setTimeout(r, AI_BACKOFF_MS[pass]));
+    }
+    pending = await runPass(pending);
+  }
+
+  pending.forEach(hid => {
+    const existing = VULNERABILITY_REPORTS.get(hid);
+    if (!existing || existing.status !== 'ok') {
+      VULNERABILITY_REPORTS.set(hid, { status: 'failed' });
+      stats.failedCount++;
+    }
+    done++;
+  });
+  onProgress?.(done, total);
+  renderHouseholdRegistry();
+  renderVulnerabilityRegistry();
+
+  return stats;
+}
+
+async function loadSavedVulnerabilityReports() {
+  try {
+    const data = await fetchJson(`${API_BASE}/ai/list_vulnerability_reports.php`);
+    (data.reports || []).forEach(r => {
+      VULNERABILITY_REPORTS.set(Number(r.household_id), {
+        status: 'ok',
+        summary: r.summary,
+        key_deprivations: r.key_deprivations,
+        data_gaps: r.data_gaps,
+        suggested_followups: r.suggested_followups,
+        model: r.model,
+        generated_at: r.generated_at,
+      });
+    });
+  } catch (err) {
+    console.warn('Saved AI reports unavailable:', err.message);
+  }
+}
+
+async function clearVulnerabilityReport(householdId) {
+  try {
+    await fetchJson(`${API_BASE}/ai/clear_vulnerability_reports.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ household_id: Number(householdId) }),
+    });
+    VULNERABILITY_REPORTS.delete(Number(householdId));
+    renderHouseholdRegistry();
+    renderVulnerabilityRegistry();
+  } catch (err) {
+    showToastAdmin('Clear Failed', err.message);
+  }
+}
+
+async function clearAllVulnerabilityReports() {
+  if (!window.confirm('Clear all saved AI commentaries? They will need to be regenerated.')) return;
+  try {
+    const data = await fetchJson(`${API_BASE}/ai/clear_vulnerability_reports.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    VULNERABILITY_REPORTS.clear();
+    renderHouseholdRegistry();
+    renderVulnerabilityRegistry();
+    showToastAdmin('Commentaries Cleared', `${data.deleted || 0} saved commentaries removed.`);
+  } catch (err) {
+    showToastAdmin('Clear Failed', err.message);
+  }
 }
 
 async function runRegistryAiAssessment(button) {
   const filter = document.getElementById('vulnerabilityPurokFilter');
   const purok = filter ? filter.value : 'all';
-  const ids = activeResidents()
-    .filter(resident => purok === 'all' || resident.purok_zone === purok)
-    .map(resident => resident.dbId);
-  if (!ids.length) {
-    showToastAdmin('Nothing to Assess', 'No residents match this Purok.');
-    return;
-  }
+  const statusRank = { poor: 0, incomplete: 1, not_poor: 2, '': 3 };
+  const rows = enrichedRegistryRows()
+    .filter(row => purok === 'all' || row.purok === purok)
+    .sort((a, b) => {
+      const rankA = statusRank[a.status] ?? 3;
+      const rankB = statusRank[b.status] ?? 3;
+      if (rankA !== rankB) return rankA - rankB;
+      const scoreA = a.score === null || a.score === undefined ? -1 : a.score;
+      const scoreB = b.score === null || b.score === undefined ? -1 : b.score;
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      return registryOrderKey(a.resident) - registryOrderKey(b.resident);
+    });
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / REGISTRY_PAGE_SIZE));
+  REGISTRY_PAGE = Math.min(Math.max(REGISTRY_PAGE, 1), totalPages);
+  const start = (REGISTRY_PAGE - 1) * REGISTRY_PAGE_SIZE;
+  const pageRows = rows.slice(start, start + REGISTRY_PAGE_SIZE);
+  if (!pageRows.length) { showToastAdmin('Nothing to Assess', 'No households match this Purok.'); return; }
+
+  const householdIds = [...new Set(pageRows.filter(row => row.householdId).map(row => Number(row.householdId)))];
+  if (!householdIds.length) { showToastAdmin('Nothing to Assess', 'No households match this Purok.'); return; }
+  if (!window.confirm(`Generate AI commentary for ${householdIds.length} household${householdIds.length === 1 ? '' : 's'} on this page?`)) return;
 
   button.disabled = true;
-  button.textContent = `Assessing 0/${ids.length}...`;
-  REGISTRY_SORT_BY_AI = true;
-  REGISTRY_PAGE = 1;
+  button.textContent = `Generating 0/${householdIds.length}...`;
   try {
-    const results = await runAiAssessment(ids, {
-      context: 'registry',
-      audit: { scope: purok === 'all' ? 'All Puroks' : purok, total: ids.length },
-      onProgress: (done, total, partial) => {
-        partial.forEach((assessment, id) => AI_ASSESSMENTS.set(id, assessment));
-        button.textContent = `Assessing ${done}/${total}...`;
-        renderVulnerabilityRegistry();
-      }
+    const r = await generateHouseholdCommentaries(householdIds, (done, total) => {
+      button.textContent = `Generating ${done}/${total}...`;
     });
-    const skipped = ids.length - results.size;
-    showToastAdmin('AI Assessment Complete', `${results.size} residents assessed${skipped ? `; ${skipped} skipped by AI` : ''}.`);
-    await loadAuditLog();
+
+    await fetchJson(`${API_BASE}/ai/generate_vulnerability_report.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        final: true,
+        count: r.successCount, unprofiled: r.unprofiledCount,
+        incomplete: r.incompleteCount, failed: r.failedCount,
+        scope: (purok === 'all' ? 'All Puroks' : purok) + ' (vulnerability registry)',
+        model: r.lastModel,
+      }),
+    }).catch(() => {});
+
+    const parts = [`${r.successCount} ${r.successCount === 1 ? 'commentary' : 'commentaries'} generated`];
+    if (r.unprofiledCount) parts.push(`${r.unprofiledCount} awaiting profile`);
+    if (r.incompleteCount) parts.push(`${r.incompleteCount} profile incomplete`);
+    if (r.failedCount) parts.push(`${r.failedCount} unavailable`);
+    showToastAdmin('AI Commentary Generated', parts.join('; ') + '.');
   } catch (err) {
-    showToastAdmin('AI Assessment Failed', `${err.message} MPI results are still shown.`);
+    showToastAdmin('AI Commentary Failed', err.message);
   } finally {
     button.disabled = false;
-    button.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> AI Assess';
-    renderVulnerabilityRegistry();
+    button.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Generate Reports';
+    loadAuditLog().catch(() => {});
+  }
+}
+
+async function runHouseholdAiReports(button) {
+  const filter = document.getElementById('householdPurokFilter');
+  const purok = filter ? filter.value : 'all';
+  let rows = HOUSEHOLD_REGISTRY.filter(h => purok === 'all' || h.purok_zone === purok);
+  if (HOUSEHOLD_SORT_BY_POVERTY) rows = sortHouseholdsByPoverty(rows);
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / HOUSEHOLD_REGISTRY_PAGE_SIZE));
+  HOUSEHOLD_REGISTRY_PAGE = Math.min(Math.max(HOUSEHOLD_REGISTRY_PAGE, 1), totalPages);
+  const start = (HOUSEHOLD_REGISTRY_PAGE - 1) * HOUSEHOLD_REGISTRY_PAGE_SIZE;
+  const pageRows = rows.slice(start, start + HOUSEHOLD_REGISTRY_PAGE_SIZE);
+  if (!pageRows.length) { showToastAdmin('Nothing to Assess', 'No households on this page.'); return; }
+
+  const householdIds = pageRows.map(h => Number(h.id));
+  if (!window.confirm(`Generate AI commentary for ${householdIds.length} household${householdIds.length === 1 ? '' : 's'} on this page?`)) return;
+
+  button.disabled = true;
+  button.textContent = `Generating 0/${householdIds.length}...`;
+  try {
+    const r = await generateHouseholdCommentaries(householdIds, (done, total) => {
+      button.textContent = `Generating ${done}/${total}...`;
+    });
+
+    // One audit entry per Generate Reports click — the batch endpoint itself
+    // does not call log_audit per household (N inserts per click is wrong).
+    await fetchJson(`${API_BASE}/ai/generate_vulnerability_report.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        final: true,
+        count: r.successCount, unprofiled: r.unprofiledCount,
+        incomplete: r.incompleteCount, failed: r.failedCount,
+        scope: (purok === 'all' ? 'All Puroks' : purok) + ' (household registry)',
+        model: r.lastModel,
+      }),
+    }).catch(() => {});
+
+    const parts = [`${r.successCount} ${r.successCount === 1 ? 'commentary' : 'commentaries'} generated`];
+    if (r.unprofiledCount) parts.push(`${r.unprofiledCount} awaiting profile`);
+    if (r.incompleteCount) parts.push(`${r.incompleteCount} profile incomplete`);
+    if (r.failedCount) parts.push(`${r.failedCount} unavailable`);
+    showToastAdmin('AI Commentary Generated', parts.join('; ') + '.');
+  } catch (err) {
+    showToastAdmin('AI Commentary Failed', err.message);
+  } finally {
+    button.disabled = false;
+    button.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Generate Reports';
+    loadAuditLog().catch(() => {});
   }
 }
 
@@ -1224,6 +1869,7 @@ function initVulnerabilityRegistry() {
   });
   const aiAssessBtn = document.getElementById('aiAssessBtn');
   aiAssessBtn?.addEventListener('click', () => runRegistryAiAssessment(aiAssessBtn));
+  document.getElementById('clearAllReportsBtn')?.addEventListener('click', clearAllVulnerabilityReports);
   document.getElementById('registryExportBtn')?.addEventListener('click', exportRegistryCsv);
   renderVulnerabilityRegistry();
 }
@@ -1232,33 +1878,33 @@ function exportRegistryCsv() {
   const filter = document.getElementById('vulnerabilityPurokFilter');
   const purok = filter ? filter.value : 'all';
   const statusRank = { poor: 0, incomplete: 1, not_poor: 2, '': 3 };
-  const rows = RESIDENTS
-    .filter(r => purok === 'all' || r.purok_zone === purok)
+  const rows = enrichedRegistryRows()
+    .filter(r => purok === 'all' || r.purok === purok)
     .sort((a, b) => {
-      const rankA = statusRank[a.mpi_status] ?? 3;
-      const rankB = statusRank[b.mpi_status] ?? 3;
+      const rankA = statusRank[a.status] ?? 3;
+      const rankB = statusRank[b.status] ?? 3;
       if (rankA !== rankB) return rankA - rankB;
-      const scoreA = a.mpi_score === null ? -1 : a.mpi_score;
-      const scoreB = b.mpi_score === null ? -1 : b.mpi_score;
+      const scoreA = a.score === null || a.score === undefined ? -1 : a.score;
+      const scoreB = b.score === null || b.score === undefined ? -1 : b.score;
       return scoreB - scoreA;
     });
   if (!rows.length) { showToastAdmin('Nothing to Export', 'No residents match this Purok.'); return; }
-  const header = ['Name', 'Purok', 'Household', 'Priority Status', 'MPI Score', 'Income Poverty Status', 'Priority Indicators', 'AI Tier', 'AI Score', 'AI Reason', 'AI Flags'];
+  const header = ['Name', 'Purok', 'Household', 'Priority Status', 'MPI Score', 'Income Poverty Status', 'Priority Indicators', 'AI Summary', 'Key Deprivations', 'Data Gaps', 'Suggested Follow-ups'];
   const lines = [header, ...rows.map(r => {
-    const ai = AI_ASSESSMENTS.get(r.dbId);
-    const indicators = (r.mpi_deprivations || []).map(n => MPI_INDICATOR_LABELS[n] || n).join('; ');
+    const report = (r.householdId && VULNERABILITY_REPORTS.get(r.householdId)) || {};
+    const indicators = (r.deprivations || []).map(n => MPI_INDICATOR_LABELS[n] || n).join('; ');
     return [
       r.name,
-      r.purok_zone || 'Not provided',
-      r.household_code || '',
-      r.mpi_status ? r.mpi_status.replace('_', ' ') : (r.household_id ? 'No MPI data' : 'Unprofiled'),
-      r.mpi_score === null ? '' : r.mpi_score,
-      r.income_poverty_status || '',
+      r.purok || 'Not provided',
+      r.code || '',
+      r.status ? String(r.status).replace('_', ' ') : (r.householdId ? 'No MPI data' : 'Unprofiled'),
+      r.score === null || r.score === undefined ? '' : r.score,
+      r.income || '',
       indicators || 'No deprivations',
-      ai ? ai.tier : 'Not assessed',
-      ai ? ai.ai_score : '',
-      ai ? ai.reason : '',
-      ai ? (ai.flags || []).join('; ') : ''
+      report.summary || '',
+      (report.key_deprivations || []).join('; '),
+      (report.data_gaps || []).join('; '),
+      (report.suggested_followups || []).join('; ')
     ];
   })].map(cells => cells.map(csvCell).join(','));
   const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
@@ -1286,13 +1932,13 @@ async function loadRequests() {
     headers: { 'X-Portal-Source': 'official' }
   });
   DOC_REQUESTS = (data.requests || []).map(mapRequestRow);
-  renderDocRequests(DOC_REQUESTS);
+  refreshDocRequestsTable();
 }
 
 async function loadComplaints() {
   const data = await fetchJson(`${API_BASE}/complaints/list.php`);
   COMPLAINTS_ADMIN = (data.complaints || []).map(mapComplaintRow);
-  renderComplaintsAdmin(COMPLAINTS_ADMIN);
+  refreshComplaintsAdmin();
 }
 
 async function refreshDashboard() {
@@ -1306,12 +1952,13 @@ async function refreshDashboard() {
 let HOUSEHOLDS = [];
 let HOUSEHOLD_REGISTRY = [];
 let HOUSEHOLD_SORT_BY_POVERTY = false;
+const HOUSEHOLD_REGISTRY_PAGE_SIZE = 20;
+let HOUSEHOLD_REGISTRY_PAGE = 1;
 const PROFILE_FIELD_KEYS = [
-  'birthdate', 'civil_status', 'purok_zone', 'number_of_dependents',
-  'is_household_head', 'is_solo_parent', 'is_pwd', 'is_4ps_member', 'years_of_residency',
-  'educational_attainment', 'employment_status', 'occupation', 'monthly_income_bracket',
-  'skills', 'work_experience_years', 'training_certifications', 'work_availability',
-  'has_drivers_license'
+  'birthdate', 'civil_status', 'purok_zone',
+  'is_solo_parent', 'is_pwd', 'is_4ps_member',
+  'educational_attainment', 'employment_status',
+  'occupation', 'work_availability', 'training_certifications'
 ];
 
 async function loadHouseholds() {
@@ -1333,6 +1980,7 @@ async function loadHouseholdRegistry() {
   const data = await fetchJson(`${API_BASE}/households/registry.php`);
   HOUSEHOLD_REGISTRY = data.households || [];
   renderHouseholdRegistry();
+  renderVulnerabilityRegistry();
 }
 
 function householdProfileBadge(h) {
@@ -1406,7 +2054,18 @@ function renderHouseholdRegistry() {
   let rows = HOUSEHOLD_REGISTRY.filter(h => filter.value === 'all' || h.purok_zone === filter.value);
   if (HOUSEHOLD_SORT_BY_POVERTY) rows = sortHouseholdsByPoverty(rows);
 
-  tbody.innerHTML = rows.length ? rows.map(h => `<tr class="vulnerability-registry-entry">
+  const totalPages = Math.max(1, Math.ceil(rows.length / HOUSEHOLD_REGISTRY_PAGE_SIZE));
+  HOUSEHOLD_REGISTRY_PAGE = Math.min(Math.max(HOUSEHOLD_REGISTRY_PAGE, 1), totalPages);
+  const start = (HOUSEHOLD_REGISTRY_PAGE - 1) * HOUSEHOLD_REGISTRY_PAGE_SIZE;
+  const pageRows = rows.slice(start, start + HOUSEHOLD_REGISTRY_PAGE_SIZE);
+  const pageLabel = document.getElementById('householdPageLabel');
+  const prevBtn = document.getElementById('householdPrevBtn');
+  const nextBtn = document.getElementById('householdNextBtn');
+  if (pageLabel) pageLabel.textContent = `Page ${HOUSEHOLD_REGISTRY_PAGE} of ${totalPages}`;
+  if (prevBtn) prevBtn.disabled = HOUSEHOLD_REGISTRY_PAGE <= 1;
+  if (nextBtn) nextBtn.disabled = HOUSEHOLD_REGISTRY_PAGE >= totalPages;
+
+  tbody.innerHTML = pageRows.length ? pageRows.map(h => `<tr class="vulnerability-registry-entry">
       <td><code>${escapeHtml(h.code)}</code></td>
       <td style="font-weight:600">${escapeHtml(h.head_name || '—')}</td>
       <td>${escapeHtml(h.purok_zone || 'Not provided')}</td>
@@ -1414,6 +2073,7 @@ function renderHouseholdRegistry() {
       <td>${householdProfileBadge(h)}</td>
       <td>${householdMpiBadge(h)}</td>
       <td>${householdIncomeBadge(h)}</td>
+      <td class="ai-assessment-cell">${reportCellHtml(VULNERABILITY_REPORTS.get(Number(h.id)), Number(h.id), h.updated_at)}</td>
       <td class="action-column">
         <div class="action-btns">
           <button type="button" class="btn-action process" onclick="openHouseholdProfileWizard(${Number(h.id)})">
@@ -1422,13 +2082,26 @@ function renderHouseholdRegistry() {
         </div>
       </td>
     </tr>`).join('')
-    : `<tr><td colspan="8" class="registry-empty">${HOUSEHOLD_REGISTRY.length ? 'No households match this Purok.' : 'No households registered yet.'}</td></tr>`;
+    : `<tr><td colspan="9" class="registry-empty">${HOUSEHOLD_REGISTRY.length ? 'No households match this Purok.' : 'No households registered yet.'}</td></tr>`;
 }
 
 function initHouseholdRegistry() {
-  document.getElementById('householdPurokFilter')?.addEventListener('change', renderHouseholdRegistry);
+  document.getElementById('householdPurokFilter')?.addEventListener('change', () => {
+    HOUSEHOLD_REGISTRY_PAGE = 1;
+    renderHouseholdRegistry();
+  });
   document.getElementById('householdSortBtn')?.addEventListener('click', toggleHouseholdSort);
   document.getElementById('householdExportBtn')?.addEventListener('click', exportHouseholdCsv);
+  document.getElementById('householdReportsBtn')?.addEventListener('click', e => runHouseholdAiReports(e.currentTarget));
+  document.getElementById('clearAllHouseholdReportsBtn')?.addEventListener('click', clearAllVulnerabilityReports);
+  document.getElementById('householdPrevBtn')?.addEventListener('click', () => {
+    HOUSEHOLD_REGISTRY_PAGE--;
+    renderHouseholdRegistry();
+  });
+  document.getElementById('householdNextBtn')?.addEventListener('click', () => {
+    HOUSEHOLD_REGISTRY_PAGE++;
+    renderHouseholdRegistry();
+  });
 }
 
 // Poor first (highest MPI score first), then incomplete, then not_poor, then unassessed.
@@ -1454,6 +2127,7 @@ function toggleHouseholdSort() {
       ? '<i class="fa-solid fa-arrow-down-wide-short"></i> Reset Order'
       : '<i class="fa-solid fa-arrow-down-wide-short"></i> Organize by Poverty';
   }
+  HOUSEHOLD_REGISTRY_PAGE = 1;
   renderHouseholdRegistry();
 }
 
@@ -1472,25 +2146,30 @@ function exportHouseholdCsv() {
     'Profile Status', 'Profile Completeness (%)',
     'MPI Status', 'MPI Score', 'MPI Method',
     'Missing MPI Dimensions',
-    'Income Status', 'Annual Per Capita Income',
-    'Assessment Complete', 'Profiled At'
+    'Income Status', 'AI Commentary', 'Annual Per Capita Income',
+    'Assessment Complete', 'Profiled At', 'Suggested Follow-ups'
   ];
-  const lines = [header, ...rows.map(h => [
-    h.code || '',
-    h.head_name || '',
-    h.purok_zone || '',
-    h.household_size ?? '',
-    h.profile_status || '',
-    h.profile_completeness ?? '',
-    h.mpi_status ? String(h.mpi_status).replace(/_/g, ' ') : '',
-    h.mpi_score === null || h.mpi_score === undefined ? '' : h.mpi_score,
-    h.assessment_method_version || '',
-    householdMpiMissingDimensions(h).join('; '),
-    h.income_poverty_status ? String(h.income_poverty_status).replace(/_/g, ' ') : '',
-    h.annual_per_capita_income === null || h.annual_per_capita_income === undefined ? '' : h.annual_per_capita_income,
-    Number(h.assessment_complete) === 1 ? 'Yes' : 'No',
-    h.profiled_at || ''
-  ])].map(cells => cells.map(csvCell).join(','));
+  const lines = [header, ...rows.map(h => {
+    const report = VULNERABILITY_REPORTS.get(Number(h.id)) || {};
+    return [
+      h.code || '',
+      h.head_name || '',
+      h.purok_zone || '',
+      h.household_size ?? '',
+      h.profile_status || '',
+      h.profile_completeness ?? '',
+      h.mpi_status ? String(h.mpi_status).replace(/_/g, ' ') : '',
+      h.mpi_score === null || h.mpi_score === undefined ? '' : h.mpi_score,
+      h.assessment_method_version || '',
+      householdMpiMissingDimensions(h).join('; '),
+      h.income_poverty_status ? String(h.income_poverty_status).replace(/_/g, ' ') : '',
+      report.summary || '',
+      h.annual_per_capita_income === null || h.annual_per_capita_income === undefined ? '' : h.annual_per_capita_income,
+      Number(h.assessment_complete) === 1 ? 'Yes' : 'No',
+      h.profiled_at || '',
+      (report.suggested_followups || []).join('; ')
+    ];
+  })].map(cells => cells.map(csvCell).join(','));
   const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const now = new Date();
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -2051,7 +2730,7 @@ function initResidentCreateForm() {
     const payload = Object.fromEntries(fd.entries());
     const includeProfile = profileNow();
     // Checkboxes not in FormData when unchecked — default to 0
-    ['is_household_head', 'is_solo_parent', 'is_pwd', 'is_4ps_member', 'has_drivers_license'].forEach(k => {
+    ['is_solo_parent', 'is_pwd', 'is_4ps_member'].forEach(k => {
       payload[k] = fd.has(k) ? 1 : 0;
     });
     if (isEdit) {
@@ -2125,21 +2804,14 @@ function openEditResidentForm(dbId) {
   if (form.civil_status) form.civil_status.value = resident.civil_status || '';
   if (form.purok_zone) form.purok_zone.value = resident.purok_zone || '';
   if (form.household_size) form.household_size.value = resident.household_size ?? 1;
-  if (form.number_of_dependents) form.number_of_dependents.value = resident.number_of_dependents ?? 0;
-  if (form.years_of_residency) form.years_of_residency.value = resident.years_of_residency ?? 0;
-  if (form.is_household_head) form.is_household_head.checked = !!resident.is_household_head;
   if (form.is_solo_parent) form.is_solo_parent.checked = !!resident.is_solo_parent;
   if (form.is_pwd) form.is_pwd.checked = !!resident.is_pwd;
   if (form.is_4ps_member) form.is_4ps_member.checked = !!resident.is_4ps_member;
   if (form.educational_attainment) form.educational_attainment.value = resident.educational_attainment || '';
   if (form.employment_status) form.employment_status.value = resident.employment_status || '';
   if (form.occupation) form.occupation.value = resident.occupation || '';
-  if (form.monthly_income_bracket) form.monthly_income_bracket.value = resident.monthly_income_bracket || '';
-  if (form.skills) form.skills.value = resident.skills || '';
-  if (form.work_experience_years) form.work_experience_years.value = resident.work_experience_years ?? 0;
   if (form.training_certifications) form.training_certifications.value = resident.training_certifications || '';
   if (form.work_availability) form.work_availability.value = resident.work_availability || '';
-  if (form.has_drivers_license) form.has_drivers_license.checked = !!resident.has_drivers_license;
 
   card.classList.add('show');
 }
@@ -2166,10 +2838,6 @@ async function toggleResidentStatus(dbId) {
   } catch (err) {
     showToastAdmin('Update Failed', err.message);
   }
-}
-
-async function deleteResident(dbId) {
-  return toggleResidentStatus(dbId);
 }
 
 function mapOfficialRow(row) {
@@ -2336,18 +3004,81 @@ async function toggleOfficialStatus(dbId) {
   }
 }
 
-function initComplaintsAdmin() {
-  renderComplaintsAdmin(COMPLAINTS_ADMIN);
-  document.getElementById('compSearch')?.addEventListener('input', filterComplaintsAdmin);
-  document.getElementById('compStatusFilter')?.addEventListener('change', filterComplaintsAdmin);
+function refreshComplaintsAdmin() {
+  const q = (document.getElementById('compSearch')?.value || '').toLowerCase();
+  const s = (document.getElementById('compStatusFilter')?.value) || 'all';
+  renderComplaintsAdmin(COMPLAINTS_ADMIN.filter(c =>
+    (c.cat.toLowerCase().includes(q) || c.filer.toLowerCase().includes(q) || c.ref.toLowerCase().includes(q)) &&
+    (s === 'all' || c.status === s)
+  ));
 }
-function filterComplaintsAdmin() {
-  const q = document.getElementById('compSearch').value.toLowerCase();
-  const s = document.getElementById('compStatusFilter').value;
-  renderComplaintsAdmin(COMPLAINTS_ADMIN.filter(c => {
-    return (c.cat.toLowerCase().includes(q) || c.filer.toLowerCase().includes(q) || c.ref.toLowerCase().includes(q)) &&
-           (s === 'all' || c.status === s);
-  }));
+
+function initComplaintsAdmin() {
+  refreshComplaintsAdmin();
+  document.getElementById('compSearch')?.addEventListener('input', refreshComplaintsAdmin);
+  document.getElementById('compStatusFilter')?.addEventListener('change', refreshComplaintsAdmin);
+}
+
+const POLL_INTERVAL_MS = 20000;
+const POLL_BACKOFF_MAX_MS = 120000;
+
+let pollTimer = null;
+let pollBackoff = POLL_INTERVAL_MS;
+let pollInflight = false;
+
+async function pollOfficialUpdates() {
+  if (document.visibilityState !== 'visible') {
+    scheduleNextPoll();
+    return;
+  }
+  if (document.querySelector('.modal-overlay.show')) {
+    scheduleNextPoll();
+    return;
+  }
+  if (pollInflight) return;
+
+  const activeSection = document.querySelector('.tab-panel.active')?.id || '';
+  const fetches = [];
+  if (activeSection === 'tab-requests' || activeSection === 'tab-dashboard') {
+    fetches.push(
+      fetchJson(`${API_BASE}/requests/list.php`, { headers: { 'X-Portal-Source': 'official' } })
+        .then(d => { DOC_REQUESTS = (d.requests || []).map(mapRequestRow); })
+    );
+  }
+  if (activeSection === 'tab-complaints' || activeSection === 'tab-dashboard') {
+    fetches.push(
+      fetchJson(`${API_BASE}/complaints/list.php`)
+        .then(d => { COMPLAINTS_ADMIN = (d.complaints || []).map(mapComplaintRow); })
+    );
+  }
+  if (!fetches.length) { scheduleNextPoll(); return; }
+
+  pollInflight = true;
+  try {
+    await Promise.all(fetches);
+    refreshDocRequestsTable();
+    refreshComplaintsAdmin();
+    await refreshDashboard();
+    pollBackoff = POLL_INTERVAL_MS;
+  } catch {
+    pollBackoff = Math.min(pollBackoff * 2, POLL_BACKOFF_MAX_MS);
+  } finally {
+    pollInflight = false;
+    scheduleNextPoll();
+  }
+}
+
+function scheduleNextPoll() {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(pollOfficialUpdates, pollBackoff);
+}
+
+function startOfficialPolling() {
+  if (pollTimer) return;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') pollOfficialUpdates();
+  });
+  pollOfficialUpdates();
 }
 
 // ── ANNOUNCEMENTS ─────────────────────────
@@ -2646,12 +3377,36 @@ const AUDIT_TAG_COLORS = {
   'Created official': '#0D9488',
   'Updated official': '#0284C7',
   'Deactivated official': '#DC2626',
-  'Activated official': '#16A34A'
+  'Activated official': '#16A34A',
+  'Cleared AI commentary':       '#DC2626',
+  'Cleared all AI commentaries': '#DC2626',
 };
-function renderAuditLog() {
+function populateAuditActionFilter() {
+  const select = document.getElementById('auditActionFilter');
+  if (!select) return;
+  const current = select.value;
+  const actions = [...new Set(AUDIT_LOG.map(a => a.action).filter(Boolean))].sort();
+  select.innerHTML = '<option value="all">All Actions</option>'
+    + actions.map(a => `<option value="${escapeAttribute(a)}">${escapeHtml(a)}</option>`).join('');
+  if (actions.includes(current)) select.value = current;
+}
+
+function renderAuditLogFiltered() {
+  const searchEl = document.getElementById('auditSearch');
+  const filterEl = document.getElementById('auditActionFilter');
+  const q = searchEl ? searchEl.value.trim().toLowerCase() : '';
+  const action = filterEl ? filterEl.value : 'all';
+
+  const filtered = AUDIT_LOG.filter(a => {
+    const hay = `${a.user} ${a.action} ${a.module} ${a.ip}`.toLowerCase();
+    const matchQ = q === '' || hay.includes(q);
+    const matchA = action === 'all' || a.action === action;
+    return matchQ && matchA;
+  });
+
   const tbody = document.getElementById('auditBody');
   if (!tbody) return;
-  tbody.innerHTML = AUDIT_LOG.map(a => `
+  tbody.innerHTML = filtered.length ? filtered.map(a => `
     <tr>
       <td style="font-size:12px;white-space:nowrap">${a.ts}</td>
       <td style="font-weight:600">${a.user}</td>
@@ -2660,7 +3415,19 @@ function renderAuditLog() {
       <td>${a.module}</td>
       <td style="font-size:12px;color:var(--text-3)">${a.ip}</td>
     </tr>
-  `).join('');
+  `).join('') : '<tr><td colspan="6" class="registry-empty">No entries match this filter.</td></tr>';
+}
+
+function renderAuditLog() {
+  const tbody = document.getElementById('auditBody');
+  if (!tbody) return;
+  populateAuditActionFilter();
+  renderAuditLogFiltered();
+}
+
+function initAuditLog() {
+  document.getElementById('auditSearch')?.addEventListener('input', renderAuditLogFiltered);
+  document.getElementById('auditActionFilter')?.addEventListener('change', renderAuditLogFiltered);
 }
 
  
@@ -2711,12 +3478,34 @@ function showResidentProfile(dbId) {
         ${profileDetailField('Address', resident.addr)}${profileDetailField('Contact', resident.contact)}${profileDetailField('Username', resident.username)}${profileDetailField('Status', resident.status)}
       </dl></section>
       <section class="detail-column"><h4 class="detail-group-title">Household &amp; Demographics</h4><dl class="detail-grid">
-        ${profileDetailField('Birthdate', resident.birthdate)}${profileDetailField('Civil Status', resident.civil_status)}${profileDetailField('Purok / Zone', resident.purok_zone)}${profileDetailField('Household Size', resident.household_size)}${profileDetailField('Dependents', resident.number_of_dependents)}${profileDetailField('Household Head', yesNo(resident.is_household_head))}${profileDetailField('Solo Parent', yesNo(resident.is_solo_parent))}${profileDetailField('PWD', yesNo(resident.is_pwd))}${profileDetailField('4Ps Member', yesNo(resident.is_4ps_member))}${profileDetailField('Years of Residency', resident.years_of_residency)}
+        ${profileDetailField('Birthdate', resident.birthdate)}${profileDetailField('Civil Status', resident.civil_status)}${profileDetailField('Purok / Zone', resident.purok_zone)}${profileDetailField('Household Size', resident.household_size)}${profileDetailField('Solo Parent', yesNo(resident.is_solo_parent))}${profileDetailField('PWD', yesNo(resident.is_pwd))}${profileDetailField('4Ps Member', yesNo(resident.is_4ps_member))}
       </dl></section>
       <section class="detail-column"><h4 class="detail-group-title">Livelihood &amp; Skills</h4><dl class="detail-grid">
-        ${profileDetailField('Educational Attainment', resident.educational_attainment)}${profileDetailField('Employment Status', resident.employment_status)}${profileDetailField('Occupation', resident.occupation)}${profileDetailField('Income Bracket', resident.monthly_income_bracket)}${profileDetailField('Skills', resident.skills)}${profileDetailField('Work Experience (years)', resident.work_experience_years)}${profileDetailField('Certifications', resident.training_certifications)}${profileDetailField('Work Availability', resident.work_availability)}${profileDetailField("Driver's License", yesNo(resident.has_drivers_license))}
+        ${profileDetailField('Educational Attainment', resident.educational_attainment)}${profileDetailField('Employment Status', resident.employment_status)}${profileDetailField('Occupation', resident.occupation)}${profileDetailField('Certifications', resident.training_certifications)}${profileDetailField('Work Availability', resident.work_availability)}
       </dl></section>
     </div>`);
+}
+
+function requestActionButtonsHtml(req) {
+  const isTerminal = req.status === 'completed' || req.status === 'cancelled';
+  const ref = escapeAttribute(req.ref);
+
+  const specs = [
+    ['Process',         'process', `openDocumentGenerationModal('${ref}')`, req.status === 'pending'],
+    ['Mark Ready',      'ready',   `updateReqStatus('${ref}','ready')`,     req.status === 'processing'],
+    ['Complete',        'approve', `updateReqStatus('${ref}','completed')`, req.status === 'ready'],
+    ['Notify via SMS',  'notify',  `notifyPickupReady('${ref}')`,           req.status === 'ready'],
+    ['Cancel Request',  'reject',  `cancelReq('${ref}')`,                   ['pending','processing'].includes(req.status)],
+    ['Mark Paid',       'approve', `updateReqPayment('${ref}','paid')`,     req.paymentStatus === 'unpaid' && !isTerminal],
+    ['Waive',           'reject',  `updateReqPayment('${ref}','waived')`,   req.paymentStatus === 'unpaid' && !isTerminal],
+  ];
+
+  const buttons = specs.map(([label, cls, handler, enabled]) => enabled
+    ? `<button type="button" class="btn-action ${cls}" onclick="${handler}">${label}</button>`
+    : `<button type="button" class="btn-action ${cls}" disabled>${label}</button>`
+  ).join('');
+
+  return `<div class="request-modal-actions">${buttons}</div>`;
 }
 
 function showRequestDetails(requestId) {
@@ -2724,11 +3513,24 @@ function showRequestDetails(requestId) {
   if (!request) return;
   const canViewGenerated = request.generatedDocumentPath && request.status !== 'completed';
   const generatedUrl = canViewGenerated ? `../${request.generatedDocumentPath.replace(/^\.?\//, '')}` : '';
+  const copies = Number(request.copies || 1);
+  const copiesLabel = copies === 1 ? '1 copy' : `${copies} copies`;
+
   document.getElementById('actionModalBox')?.classList.add('detail-modal-box');
   showModal('Request Details', `
     <dl class="detail-grid request-detail-grid">
-      ${profileDetailField('Reference Number', request.ref)}${profileDetailField('Resident', request.resident)}${profileDetailField('Document Type', request.type)}${profileDetailField('Purpose', request.purpose)}${profileDetailField('Status', request.status)}${profileDetailField('Date Requested', request.date)}${profileDetailField('Date Completed / Processed', request.dateCompleted)}
+      ${profileDetailField('Reference Number', request.ref)}
+      ${profileDetailField('Resident', request.resident)}
+      ${profileDetailField('Document Type', request.type)}
+      ${profileDetailField('Purpose', request.purpose)}
+      ${profileDetailField('Status', request.status)}
+      ${profileDetailField('Quantity', copiesLabel)}
+      ${profileDetailField('Total Amount', peso(request.totalAmount))}
+      ${profileDetailField('Payment Status', request.paymentStatus || 'unpaid')}
+      ${profileDetailField('Date Requested', request.date)}
+      ${profileDetailField('Date Completed / Processed', request.dateCompleted)}
     </dl>
+    ${requestActionButtonsHtml(request)}
     ${canViewGenerated ? `<div class="generated-document-preview"><a class="btn-action approve" href="${escapeAttribute(generatedUrl)}" target="_blank" rel="noopener"><i class="fa-solid fa-file-pdf"></i> View Generated Document</a><iframe title="Generated document preview" src="${escapeAttribute(generatedUrl)}"></iframe></div>` : ''}`);
 }
 
@@ -2765,20 +3567,27 @@ document.addEventListener('DOMContentLoaded', () => {
   initDocumentGenerationModal();
   initAiHub();
   initAiEchoTest();
+  initReportTiles();
   initVulnerabilityRegistry();
   initHouseholdRegistry();
   initHouseholdWizard();
   initRegistryTabs();
   initWorkforceInsights();
+  initAuditLog();
   renderAuditLog();
+  startOfficialPolling();
   (async () => {
     try {
+      await loadSavedVulnerabilityReports();
       await Promise.all([
         loadResidents(), loadRequests(), loadComplaints(), loadAnnouncements(), loadServices(), loadAuditLog(),
         // Household data is non-fatal: the rest of the dashboard must still load if these fail.
         loadHouseholds().catch(err => console.warn('Households unavailable:', err.message)),
+        loadHouseholdRegistry().catch(err => console.warn('Household registry unavailable:', err.message)),
         ...(window.IS_OFFICIAL_ADMIN ? [loadOfficials()] : [])
       ]);
+      renderVulnerabilityRegistry();
+      renderHouseholdRegistry();
       await refreshDashboard();
     } catch (err) {
       showToastAdmin('Data Load Failed', err.message);

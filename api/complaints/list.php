@@ -19,7 +19,7 @@ if (!$officialSession && !$residentSession) {
 
 $db = get_db();
 
-$sql = "SELECT id, resident_id, reference_no, resident_name, category, location_text, description, date_filed, status, official_note
+$sql = "SELECT id, resident_id, reference_no, resident_name, category, severity, location_text, description, date_filed, status, official_note
         FROM complaints";
 if ($officialSession) {
   $sql .= ' ORDER BY id DESC';

@@ -123,14 +123,6 @@ body.sidebar-collapsed { --sidebar-w: 80px; }
 .snav-item:hover { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.88); }
 .snav-item.active { background: var(--blue-mid); color: white; box-shadow: 0 3px 12px rgba(25,118,210,0.3); }
 .nav-text { display: inline-block; vertical-align: middle; overflow: hidden; transition: opacity var(--t) ease, max-width var(--t) ease; }
-.badge-count {
-  margin-left: auto;
-  background: rgba(255,255,255,0.12);
-  color: rgba(255,255,255,0.7);
-  font-size: 10px; font-weight: 700;
-  padding: 2px 7px; border-radius: 100px;
-}
-.pending-badge { background: var(--danger); color: white; }
 .sidebar-footer { padding: 10px; border-top: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
 .logout-item { color: rgba(255,255,255,0.45) !important; }
 .logout-item:hover { background: rgba(239,68,68,0.1) !important; color: var(--danger) !important; }
@@ -195,17 +187,6 @@ body.sidebar-collapsed .main-area {
 body::-webkit-scrollbar:horizontal,
 .sidebar::-webkit-scrollbar:horizontal {
   height: 0 !important;
-}
-
-/* Hide slider-like UI when sidebar is collapsed (covers range inputs, carousels, and slider classes) */
-body.sidebar-collapsed .slider,
-body.sidebar-collapsed .range-slider,
-body.sidebar-collapsed input[type="range"],
-body.sidebar-collapsed [role="slider"],
-body.sidebar-collapsed .slick-slider,
-body.sidebar-collapsed .carousel,
-body.sidebar-collapsed .slider-container {
-  display: none !important;
 }
 
 /* ── MAIN AREA ───────────────────────────── */
@@ -437,7 +418,6 @@ body.sidebar-collapsed .slider-container {
 .registry-header h3 { color: var(--text); font-size: 1.05rem; display: flex; align-items: center; gap: 8px; }
 .registry-header h3 i { color: var(--blue-mid); }
 .registry-header p { margin-top: 5px; color: var(--text-3); font-size: 13px; }
-.vulnerability-score { display: inline-flex; min-width: 38px; justify-content: center; padding: 4px 9px; border-radius: 999px; background: var(--blue-lt); color: var(--blue); font-weight: 700; }
 .registry-empty { text-align: center; color: var(--text-3); padding: 24px !important; }
 .vulnerability-registry-table { border-collapse: separate; border-spacing: 0 8px; }
 .vulnerability-registry-table thead th { border-bottom: 1px solid var(--border); }
@@ -477,7 +457,6 @@ body.sidebar-collapsed .slider-container {
 .ai-assessment-cell { min-width: 220px; max-width: 360px; }
 .ai-tier { display: inline-flex; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .ai-tier-critical { background: #FEE2E2; color: #B91C1C; }
-.ai-tier-high { background: #FFEDD5; color: #C2410C; }
 .ai-tier-moderate { background: #FEF9C3; color: #A16207; }
 .ai-tier-low { background: #DCFCE7; color: #15803D; }
 .ai-tier-none { background: var(--surface); color: var(--text-3); font-weight: 600; }
@@ -517,6 +496,11 @@ button.ai-tool-tile:focus-visible { outline: 2px solid var(--blue-mid); outline-
 .ai-echo-response.is-loading { color: var(--blue-mid); }
 .ai-echo-response.is-success { color: var(--text); }
 .ai-echo-response.is-error { color: var(--danger); border-color: var(--danger); }
+#docReportsAiOutput.is-success,
+#complaintReportsAiOutput.is-success { white-space: normal; }
+@media print {
+  #docReportsAiCard, #complaintReportsAiCard { display: none !important; }
+}
 @media (max-width: 640px) {
   .registry-header { flex-direction: column; }
   .registry-actions { width: 100%; }
@@ -536,7 +520,6 @@ button.ai-tool-tile:focus-visible { outline: 2px solid var(--blue-mid); outline-
 .sac-emoji { font-size: 28px; }
 .sac-title { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 1.1rem; font-weight: 600; }
 .sac-cat { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; }
-.sac-rating { font-size: 13px; font-weight: 700; color: var(--gold); margin-bottom: 10px; }
 .sac-actions { display: flex; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
 
 /* ── AUDIT LOG ───────────────────────────── */
@@ -870,3 +853,28 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   box-shadow: var(--shadow);
 }
 .registry-pane[hidden] { display: none; }
+
+.ai-report-clear {
+  float: right;
+  border: none; background: transparent;
+  color: var(--text-3); font-size: 16px; line-height: 1;
+  cursor: pointer; padding: 0 2px; margin-left: 6px;
+}
+.ai-report-clear:hover { color: var(--danger); }
+
+.request-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.btn-action:disabled,
+.btn-action:disabled:hover {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: var(--surface-2);
+  color: var(--text-3);
+  border-color: var(--border);
+}

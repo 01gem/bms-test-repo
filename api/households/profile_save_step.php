@@ -15,7 +15,6 @@
 
 require_once __DIR__ . '/../common.php';
 require_once __DIR__ . '/profile_steps.php';
-require_once __DIR__ . '/mpi_engine.php';
 session_start();
 require_official_session();
 require_post();
@@ -104,7 +103,7 @@ $pStmt->close();
 $profile = $profiles[0] ?? null;
 
 $threshold   = lookup_poverty_threshold();
-$assessment  = assess_household($household, $profile, $threshold);
+$assessment  = calculate_mpi_assessment($household, $profile, $threshold);
 
 // ── 6. Persist the assessment to `households` ──
 $setParts = [];

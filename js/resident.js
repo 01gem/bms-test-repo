@@ -12,6 +12,49 @@
 const API_BASE = '../api';
 const SIDEBAR_STATE_KEY = 'barangalink.sidebarCollapsed.resident';
 const ACTIVE_SECTION_KEY = 'resident_active_section';
+let DOC_PRICES = {};
+function pesoR(n) { return '₱' + Number(n || 0).toFixed(2); }
+
+async function loadDocumentPrices() {
+  try {
+    const data = await fetchJson(`${API_BASE}/document_prices/list.php`);
+    const rows = data.prices || [];
+    DOC_PRICES = {};
+    (Array.isArray(rows) ? rows : []).forEach(p => {
+      if (p && p.document_type) DOC_PRICES[p.document_type] = Number(p.unit_price || 0);
+    });
+  } catch { DOC_PRICES = {}; }
+}
+
+function hasPostedPrice(type) {
+  return Object.prototype.hasOwnProperty.call(DOC_PRICES, type);
+}
+
+function updateRequestTotal() {
+  const typeEl   = document.getElementById('reqDocType');
+  const copiesEl = document.getElementById('reqCopies');
+  const submitEl = document.getElementById('reqSubmitBtn');
+  if (!typeEl || !copiesEl) return;
+  const copies = Math.max(1, Math.min(5, parseInt(copiesEl.value, 10) || 1));
+  document.getElementById('reqCopiesOut').textContent = String(copies);
+  if (!hasPostedPrice(typeEl.value)) {
+    document.getElementById('reqUnitPrice').textContent   = '—';
+    document.getElementById('reqTotalAmount').textContent = '—';
+    if (submitEl) submitEl.disabled = true;
+    return;
+  }
+  const unit = Number(DOC_PRICES[typeEl.value]);
+  document.getElementById('reqUnitPrice').textContent   = pesoR(unit);
+  document.getElementById('reqTotalAmount').textContent = pesoR(unit * copies);
+  if (submitEl) submitEl.disabled = false;
+}
+
+function initRequestPricing() {
+  document.getElementById('reqDocType')?.addEventListener('change', updateRequestTotal);
+  document.getElementById('reqCopies')?.addEventListener('input', updateRequestTotal);
+  updateRequestTotal();
+}
+
 let REQUESTS = [];
 let COMPLAINTS = [];
 let NOTIFICATIONS = [];
@@ -207,7 +250,7 @@ function renderRequestsTable(data) {
   const tbody = document.getElementById('reqTableBody');
   if (!tbody) return;
   if (!data.length) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:32px;">No requests found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-3);padding:32px;">No requests found.</td></tr>`;
     return;
   }
   tbody.innerHTML = data.map(r => `
@@ -216,14 +259,61 @@ function renderRequestsTable(data) {
       <td style="font-weight:600;color:var(--text)">${r.type}</td>
       <td>${r.purpose}</td>
       <td>${r.date}</td>
+      <td>
+        <div style="font-weight:600">${pesoR(r.totalAmount)}</div>
+        <span class="status-badge status-${r.paymentStatus || 'unpaid'}">${r.paymentStatus || 'unpaid'}</span>
+      </td>
       <td><span class="status-badge status-${r.status}">${r.status}</span></td>
-      <td><button onclick="viewRequest('${r.ref}')" style="font-size:12px;padding:5px 12px;background:var(--surface);border:1.5px solid var(--border);border-radius:6px;cursor:pointer;font-family:'Jost',sans-serif;font-weight:600;color:var(--text-2);">View</button></td>
+      <td><button onclick="viewRequest(${r.id})" style="font-size:12px;padding:5px 12px;background:var(--surface);border:1.5px solid var(--border);border-radius:6px;cursor:pointer;font-weight:600;color:var(--text-2);">View</button></td>
     </tr>
   `).join('');
 }
 
-function viewRequest(ref) {
-  alert(`Request details: ${ref}\n\n[In full system: this opens a detail modal with status timeline, official notes, and pickup instructions.]`);
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function viewRequest(id) {
+  const req = REQUESTS.find(r => Number(r.id) === Number(id));
+  if (!req) return;
+  const copies = Number(req.copies || 1);
+  const copiesLabel = copies === 1 ? '1 copy' : `${copies} copies`;
+  const fields = [
+    ['Reference Number', req.ref],
+    ['Document Type', req.type],
+    ['Purpose', req.purpose],
+    ['Quantity', copiesLabel],
+    ['Total Amount', pesoR(req.totalAmount)],
+    ['Payment Status', req.paymentStatus || 'unpaid'],
+    ['Status', req.status],
+    ['Date Requested', req.date],
+  ];
+  const box = document.getElementById('requestModalBox');
+  if (!box) return;
+  box.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+      <h3 style="font-size:1.2rem;font-weight:600;color:var(--text)">Request Details</h3>
+      <button type="button" onclick="closeRequestModal()" style="background:none;border:none;font-size:18px;color:var(--text-3);cursor:pointer"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <dl style="display:grid;gap:8px;margin:0 0 20px">
+      ${fields.map(([label, value]) => `
+        <div style="display:flex;justify-content:space-between;gap:12px;padding:8px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:7px">
+          <dt style="color:var(--text-3);font-size:11px;text-transform:uppercase;letter-spacing:.04em">${escapeHtml(label)}</dt>
+          <dd style="margin:0;color:var(--text);font-size:13px;font-weight:600;text-align:right;overflow-wrap:anywhere">${escapeHtml(value)}</dd>
+        </div>`).join('')}
+    </dl>
+    <button type="button" onclick="closeRequestModal()" style="padding:9px 24px;background:var(--blue-mid);color:white;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">Close</button>
+  `;
+  document.getElementById('requestModal').classList.add('show');
+}
+
+function closeRequestModal() {
+  document.getElementById('requestModal')?.classList.remove('show');
 }
 
 function initRequestsTable() {
@@ -364,11 +454,15 @@ function initMarkAllRead() {
 
 function mapRequestRow(row) {
   return {
+    id: Number(row.id),
     ref: row.reference_no,
     type: row.document_type,
     purpose: row.purpose,
     date: row.date_requested,
-    status: row.status
+    status: row.status,
+    copies: Number(row.copies || 1),
+    totalAmount: Number(row.total_amount || 0),
+    paymentStatus: row.payment_status || 'unpaid'
   };
 }
 
@@ -540,21 +634,26 @@ async function refreshResidentView() {
 }
 
 async function submitRequest(formEl, form) {
-  const selects = formEl.querySelectorAll('select');
-  const type = selects[0]?.value || '';
-  const purpose = selects[1]?.value || '';
+  const type   = document.getElementById('reqDocType')?.value || '';
+  const purpose = document.getElementById('reqPurpose')?.value || '';
+  const copies = Math.min(5, Math.max(1, parseInt(document.getElementById('reqCopies')?.value || '1', 10) || 1));
   if (!type || !purpose) {
     showToast('Missing Fields', 'Please select a document type and purpose.');
+    return;
+  }
+  if (!hasPostedPrice(type)) {
+    showToast('Price Unavailable', 'This document type has no posted price. Choose another type or try again later.');
     return;
   }
   try {
     await fetchJson(`${API_BASE}/requests/create.php`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ document_type: type, purpose })
+      body: JSON.stringify({ document_type: type, purpose, copies })
     });
     form.style.display = 'none';
     formEl.reset();
+    updateRequestTotal();
     await loadRequests();
     await refreshResidentView();
     showToast('Request Submitted!', 'Your document request has been submitted.');
@@ -564,9 +663,9 @@ async function submitRequest(formEl, form) {
 }
 
 async function submitComplaint(formEl, form) {
-  const category = formEl.querySelector('select')?.value || '';
-  const location = formEl.querySelector('input[type=text]')?.value || '';
-  const description = formEl.querySelector('textarea')?.value || '';
+  const category = document.getElementById('reqCategory')?.value || '';
+  const location = document.getElementById('reqLocation')?.value || '';
+  const description = document.getElementById('reqDescription')?.value || '';
   if (!category || !location || !description) {
     showToast('Missing Fields', 'Please complete all complaint details.');
     return;
@@ -665,6 +764,67 @@ function showToast(title, body) {
   }, 5000);
 }
 
+const POLL_INTERVAL_MS = 20000;
+const POLL_BACKOFF_MAX_MS = 120000;
+
+let pollTimer = null;
+let pollBackoff = POLL_INTERVAL_MS;
+let pollInflight = false;
+
+async function pollResidentUpdates() {
+  if (document.visibilityState !== 'visible') {
+    scheduleNextPoll();
+    return;
+  }
+  if (document.querySelector('.modal-overlay.show')) {
+    scheduleNextPoll();
+    return;
+  }
+  if (pollInflight) return;
+
+  const activeSection = document.querySelector('.tab-panel.active')?.id || '';
+  const fetches = [];
+  if (activeSection === 'tab-requests' || activeSection === 'tab-dashboard') {
+    fetches.push(fetchJson(`${API_BASE}/requests/list.php`)
+      .then(d => { REQUESTS = (d.requests || []).map(mapRequestRow); }));
+  }
+  if (activeSection === 'tab-complaints' || activeSection === 'tab-dashboard') {
+    fetches.push(fetchJson(`${API_BASE}/complaints/list.php`)
+      .then(d => { COMPLAINTS = (d.complaints || []).map(mapComplaintRow); }));
+  }
+  if (activeSection === 'tab-notifications' || activeSection === 'tab-dashboard') {
+    fetches.push(fetchJson(`${API_BASE}/notifications/list.php`)
+      .then(d => { NOTIFICATIONS = (d.notifications || []).map(mapNotificationRow); }));
+  }
+  if (!fetches.length) { scheduleNextPoll(); return; }
+
+  pollInflight = true;
+  try {
+    await Promise.all(fetches);
+    await refreshResidentView();
+    filterRequests();
+    pollBackoff = POLL_INTERVAL_MS;
+  } catch {
+    pollBackoff = Math.min(pollBackoff * 2, POLL_BACKOFF_MAX_MS);
+  } finally {
+    pollInflight = false;
+    scheduleNextPoll();
+  }
+}
+
+function scheduleNextPoll() {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(pollResidentUpdates, pollBackoff);
+}
+
+function startResidentPolling() {
+  if (pollTimer) return;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') pollResidentUpdates();
+  });
+  pollResidentUpdates();
+}
+
 // ── INIT ──────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   initNav();
@@ -677,8 +837,11 @@ document.addEventListener('DOMContentLoaded', () => {
   initNotifDrawer();
   initMarkAllRead();
   initProfilePhotoUpload();
+  startResidentPolling();
   (async () => {
     try {
+      await loadDocumentPrices();
+      initRequestPricing();
       await Promise.all([loadRequests(), loadComplaints(), loadNotifications()]);
       await refreshResidentView();
     } catch (err) {

@@ -7,6 +7,7 @@
  */
 
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/households/mpi_engine.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -228,7 +229,7 @@ function ai_decode_json(string $content): ?array {
  * detail is error_log()ed only; it is never echoed or returned.
  *
  * Called by profile_save_step.php after each wizard save to resolve the active
- * threshold before assess_household() is run.
+ * threshold before calculate_mpi_assessment() is run.
  */
 function lookup_poverty_threshold(string $province = 'Surigao del Norte', string $region = 'Caraga'): ?array {
   $conn = get_db();
@@ -271,6 +272,23 @@ function lookup_poverty_threshold(string $province = 'Surigao del Norte', string
   }
 
   return null;
+}
+
+/**
+ * Deterministic MPI assessment for a household.
+ *
+ * Phase 3 spec name. Delegates to the pure engine in mpi_engine.php.
+ * Both inputs and output are the same as assess_household(); the wrapper
+ * exists so callers (and the spec) can use a stable, well-named entry point
+ * without reaching into the engine module directly.
+ *
+ * @param array       $household  Row from `households` (uses household_size).
+ * @param array|null  $profile    Row from `household_profiles` or null.
+ * @param array|null  $threshold  Row from `poverty_thresholds` or null.
+ * @return array<string,mixed> Column → value pairs ready to persist.
+ */
+function calculate_mpi_assessment(array $household, ?array $profile = null, ?array $threshold = null): array {
+  return assess_household($household, $profile, $threshold);
 }
 
 /**

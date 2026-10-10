@@ -74,34 +74,24 @@ if ($householdMode === 'link') {
 $profileNow = !empty($input['profile_now']) && (string)$input['profile_now'] !== '0';
 
 $birthdate = $civil_status = $purok_zone = $educational_attainment = null;
-$employment_status = $occupation = $monthly_income_bracket = $skills = null;
+$employment_status = $occupation = null;
 $training_certifications = $work_availability = null;
-$number_of_dependents = 0; $years_of_residency = 0; $work_experience_years = 0;
-$is_household_head = 0; $is_solo_parent = 0; $is_pwd = 0; $is_4ps_member = 0; $has_drivers_license = 0;
+$is_solo_parent = 0; $is_pwd = 0; $is_4ps_member = 0;
 $household_size = max(1, $householdSizeInput);
 
 if ($profileNow) {
   $birthdate = trim((string)($input['birthdate'] ?? '')) ?: null;
   $civil_status = trim((string)($input['civil_status'] ?? '')) ?: null;
   $purok_zone = trim((string)($input['purok_zone'] ?? '')) ?: null;
-  $number_of_dependents = isset($input['number_of_dependents']) && $input['number_of_dependents'] !== '' ? (int)$input['number_of_dependents'] : 0;
-  $is_household_head = !empty($input['is_household_head']) ? 1 : 0;
   $is_solo_parent = !empty($input['is_solo_parent']) ? 1 : 0;
   $is_pwd = !empty($input['is_pwd']) ? 1 : 0;
   $is_4ps_member = !empty($input['is_4ps_member']) ? 1 : 0;
-  $years_of_residency = isset($input['years_of_residency']) && $input['years_of_residency'] !== '' ? (int)$input['years_of_residency'] : 0;
   $educational_attainment = trim((string)($input['educational_attainment'] ?? '')) ?: null;
   $employment_status = trim((string)($input['employment_status'] ?? '')) ?: null;
   $occupation = trim((string)($input['occupation'] ?? '')) ?: null;
-  $monthly_income_bracket = trim((string)($input['monthly_income_bracket'] ?? '')) ?: null;
-  $skills = trim((string)($input['skills'] ?? '')) ?: null;
-  $work_experience_years = isset($input['work_experience_years']) && $input['work_experience_years'] !== '' ? (int)$input['work_experience_years'] : 0;
   $training_certifications = trim((string)($input['training_certifications'] ?? '')) ?: null;
   $work_availability = trim((string)($input['work_availability'] ?? '')) ?: null;
-  $has_drivers_license = !empty($input['has_drivers_license']) ? 1 : 0;
 }
-// The head of a newly created household is always flagged as household head.
-if ($householdMode === 'new') $is_household_head = 1;
 
 $hash = password_hash($password, PASSWORD_DEFAULT);
 
@@ -136,20 +126,19 @@ try {
 
   $insert = $db->prepare("INSERT INTO residents (
     fname, lname, address, contact, username, password,
-    birthdate, civil_status, purok_zone, household_size, number_of_dependents,
-    is_household_head, is_solo_parent, is_pwd, is_4ps_member, years_of_residency,
-    educational_attainment, employment_status, occupation, monthly_income_bracket,
-    skills, work_experience_years, training_certifications, work_availability,
-    has_drivers_license,
+    birthdate, civil_status, purok_zone, household_size,
+    is_solo_parent, is_pwd, is_4ps_member,
+    educational_attainment, employment_status, occupation,
+    work_availability, training_certifications,
     household_id, relationship_to_household_head
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
   if (!$insert) throw new RuntimeException('resident prepare failed: ' . $db->error);
-  $insert->bind_param('sssssssssiiiiiiisssssissiis',
+  $insert->bind_param('sssssssssiiiisssssis',
     $fname, $lname, $address, $contact, $username, $hash,
-    $birthdate, $civil_status, $purok_zone, $household_size, $number_of_dependents,
-    $is_household_head, $is_solo_parent, $is_pwd, $is_4ps_member, $years_of_residency,
-    $educational_attainment, $employment_status, $occupation, $monthly_income_bracket,
-    $skills, $work_experience_years, $training_certifications, $work_availability, $has_drivers_license,
+    $birthdate, $civil_status, $purok_zone, $household_size,
+    $is_solo_parent, $is_pwd, $is_4ps_member,
+    $educational_attainment, $employment_status, $occupation,
+    $work_availability, $training_certifications,
     $householdId, $relationshipToHead
   );
   if (!$insert->execute()) {

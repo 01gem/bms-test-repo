@@ -134,7 +134,7 @@ if (count($officialNameParts) >= 2) {
       <div class="tab-panel active" id="tab-dashboard">
         <div class="stat-cards" id="dashStats"></div>
         <div class="dash-row">
-          <div class="card dash-card" id="pendingRequestsCard">
+          <div class="card dash-card">
             <div class="dc-head">
               <h3><i class="fa-solid fa-file-clock"></i> Pending Document Requests</h3>
               <button class="dc-more-btn" onclick="switchTab('requests')">View all →</button>
@@ -257,15 +257,9 @@ if (count($officialNameParts) >= 2) {
                     </select>
                   </div>
                 </div>
-                <div class="form-2col">
-                  <div class="field"><label>Purok / Zone</label><input type="text" name="purok_zone" class="form-input" placeholder="e.g. Purok 3" /></div>
-                  <div class="field"><label>No. of Dependents</label><input type="number" name="number_of_dependents" class="form-input" min="0" value="0" /></div>
-                </div>
-                <div class="form-2col" id="residentHouseholdSizeSlot">
-                  <div class="field"><label>Years of Residency</label><input type="number" name="years_of_residency" class="form-input" min="0" value="0" /></div>
-                </div>
+                <div class="field" style="margin-top:8px;"><label>Purok / Zone</label><input type="text" name="purok_zone" class="form-input" placeholder="e.g. Purok 3" /></div>
+                <div id="residentHouseholdSizeSlot"></div>
                 <div class="form-2col profiling-checkboxes">
-                  <label class="checkbox-label"><input type="checkbox" name="is_household_head" value="1" /> Household Head</label>
                   <label class="checkbox-label"><input type="checkbox" name="is_solo_parent" value="1" /> Solo Parent</label>
                   <label class="checkbox-label"><input type="checkbox" name="is_pwd" value="1" /> Person with Disability (PWD)</label>
                   <label class="checkbox-label"><input type="checkbox" name="is_4ps_member" value="1" /> 4Ps Member</label>
@@ -296,35 +290,17 @@ if (count($officialNameParts) >= 2) {
                     </select>
                   </div>
                 </div>
-                <div class="form-2col">
-                  <div class="field"><label>Occupation</label><input type="text" name="occupation" class="form-input" placeholder="e.g. Farmer, Teacher" /></div>
-                  <div class="field"><label>Monthly Income Bracket</label>
-                    <select name="monthly_income_bracket" class="form-input">
-                      <option value="">— Select —</option>
-                      <option value="Below 5000">Below ₱5,000</option>
-                      <option value="5000-10000">₱5,000 – ₱10,000</option>
-                      <option value="10000-20000">₱10,000 – ₱20,000</option>
-                      <option value="Above 20000">Above ₱20,000</option>
-                    </select>
-                  </div>
-                </div>
-                <div class="field" style="margin-top:8px;"><label>Skills <span class="opt-label">(comma-separated)</span></label><textarea name="skills" class="form-input" rows="2" placeholder="e.g. Carpentry, Welding, Sewing"></textarea></div>
-                <div class="form-2col">
-                  <div class="field"><label>Work Experience (years)</label><input type="number" name="work_experience_years" class="form-input" min="0" value="0" /></div>
-                  <div class="field"><label>Work Availability</label>
-                    <select name="work_availability" class="form-input">
-                      <option value="">— Select —</option>
-                      <option value="Full-time">Full-time</option>
-                      <option value="Part-time">Part-time</option>
-                      <option value="Seasonal">Seasonal</option>
-                      <option value="Not looking">Not looking</option>
-                    </select>
-                  </div>
+                <div class="field" style="margin-top:8px;"><label>Occupation</label><input type="text" name="occupation" class="form-input" placeholder="e.g. Farmer, Teacher" /></div>
+                <div class="field" style="margin-top:8px;"><label>Work Availability</label>
+                  <select name="work_availability" class="form-input">
+                    <option value="">— Select —</option>
+                    <option value="Full-time">Full-time</option>
+                    <option value="Part-time">Part-time</option>
+                    <option value="Seasonal">Seasonal</option>
+                    <option value="Not looking">Not looking</option>
+                  </select>
                 </div>
                 <div class="field" style="margin-top:8px;"><label>Training / Certifications</label><textarea name="training_certifications" class="form-input" rows="2" placeholder="e.g. TESDA NC II - Welding"></textarea></div>
-                <div class="profiling-checkboxes" style="margin-top:8px;">
-                  <label class="checkbox-label"><input type="checkbox" name="has_drivers_license" value="1" /> Has Driver's License</label>
-                </div>
               </fieldset>
             </div>
 
@@ -530,10 +506,9 @@ if (count($officialNameParts) >= 2) {
         <div class="tab-header"><h2>Audit Log</h2></div>
         <div class="card">
           <div class="table-toolbar">
-            <input type="text" class="table-search" placeholder="Search by user or action…" />
-            <select class="table-filter">
+            <input type="text" class="table-search" id="auditSearch" placeholder="Search by user, action, or module…" />
+            <select class="table-filter" id="auditActionFilter">
               <option value="all">All Actions</option>
-              <option>Login</option><option>Request Update</option><option>Complaint Update</option><option>Announcement Post</option><option>Resident Verification</option>
             </select>
           </div>
           <div class="table-wrap">
@@ -551,11 +526,19 @@ if (count($officialNameParts) >= 2) {
         <div class="ai-hub" id="aiHub">
           <button type="button" class="ai-tool-tile" data-ai-view="registry">
             <span class="ai-tile-ico" style="background:#DBEAFE;color:#1976D2"><i class="fa-solid fa-shield-halved"></i></span>
-            <span class="ai-tile-text"><span class="ai-tile-title">Vulnerability Registry</span><span class="ai-tile-desc">AI-assessed vulnerability ranking</span></span>
+            <span class="ai-tile-text"><span class="ai-tile-title">Vulnerability Registry</span><span class="ai-tile-desc">Deterministic MPI ranking with AI commentary</span></span>
           </button>
           <button type="button" class="ai-tool-tile" data-ai-view="workforce">
             <span class="ai-tile-ico" style="background:#EDE9FE;color:#7C3AED"><i class="fa-solid fa-chart-column"></i></span>
             <span class="ai-tile-text"><span class="ai-tile-title">Workforce Insights</span><span class="ai-tile-desc">Employment and skill breakdowns</span></span>
+          </button>
+          <button type="button" class="ai-tool-tile" data-ai-view="docreports">
+            <span class="ai-tile-ico" style="background:#DBEAFE;color:#1976D2"><i class="fa-solid fa-file-invoice-dollar"></i></span>
+            <span class="ai-tile-text"><span class="ai-tile-title">Document Requests Report</span><span class="ai-tile-desc">Monthly volume, revenue &amp; AI commentary</span></span>
+          </button>
+          <button type="button" class="ai-tool-tile" data-ai-view="complaintreports">
+            <span class="ai-tile-ico" style="background:#FEE2E2;color:#DC2626"><i class="fa-solid fa-triangle-exclamation"></i></span>
+            <span class="ai-tile-text"><span class="ai-tile-title">Complaints Report</span><span class="ai-tile-desc">Category, severity &amp; AI commentary</span></span>
           </button>
           <button type="button" class="ai-tool-tile is-secondary" data-ai-view="echo">
             <span class="ai-tile-ico"><i class="fa-solid fa-plug"></i></span>
@@ -579,10 +562,13 @@ if (count($officialNameParts) >= 2) {
           <div class="registry-header">
             <div>
               <h3><i class="fa-solid fa-shield-halved"></i> Vulnerability Registry</h3>
-              <p>Household MPI status and deprivations from the household questionnaire, with on-demand Gemini assessment of the filtered residents.</p>
+              <p>Household MPI status and deprivations from the household questionnaire. Gemini generates a plain-English commentary per household on demand; the deterministic MPI result is unchanged.</p>
             </div>
             <div class="registry-actions">
-              <button id="aiAssessBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-wand-magic-sparkles"></i> AI Assess</button>
+              <button id="aiAssessBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-wand-magic-sparkles"></i> Generate Reports</button>
+              <button id="clearAllReportsBtn" type="button" class="btn-primary-action">
+                <i class="fa-solid fa-eraser"></i> Clear Commentaries
+              </button>
               <button id="registryExportBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-file-csv"></i> Export as CSV</button>
             </div>
           </div>
@@ -600,7 +586,7 @@ if (count($officialNameParts) >= 2) {
                   <th>Household</th>
                   <th>Priority Status</th>
                   <th>Priority Indicators</th>
-                  <th>AI Assessment</th>
+                  <th>AI Commentary</th>
                 </tr>
               </thead>
               <tbody id="vulnerabilityRegistryBody"></tbody>
@@ -622,6 +608,10 @@ if (count($officialNameParts) >= 2) {
               <p>One row per household. Households marked <strong>Unprofiled</strong> have no questionnaire data yet and cannot be assessed.</p>
             </div>
             <div class="registry-actions">
+              <button id="householdReportsBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-wand-magic-sparkles"></i> Generate Reports</button>
+              <button id="clearAllHouseholdReportsBtn" type="button" class="btn-primary-action">
+                <i class="fa-solid fa-eraser"></i> Clear Commentaries
+              </button>
               <button id="householdSortBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-arrow-down-wide-short"></i> Organize by Poverty</button>
               <button id="householdExportBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-file-csv"></i> Export as CSV</button>
             </div>
@@ -633,12 +623,146 @@ if (count($officialNameParts) >= 2) {
           </div>
           <div class="table-wrap">
             <table class="data-table vulnerability-registry-table">
-              <thead><tr><th>Household</th><th>Head</th><th>Purok</th><th>Size</th><th>Profile Status</th><th>MPI</th><th>Income Status</th><th class="action-column">Actions</th></tr></thead>
+              <thead><tr><th>Household</th><th>Head</th><th>Purok</th><th>Size</th><th>Profile Status</th><th>MPI</th><th>Income Status</th><th>AI Commentary</th><th class="action-column">Actions</th></tr></thead>
               <tbody id="householdRegistryBody"></tbody>
             </table>
           </div>
+          <div class="registry-pagination" id="householdRegistryPager">
+            <button type="button" class="btn-action view" id="householdPrevBtn"><i class="fa-solid fa-chevron-left"></i> Prev</button>
+            <span id="householdPageLabel">Page 1 of 1</span>
+            <button type="button" class="btn-action view" id="householdNextBtn">Next <i class="fa-solid fa-chevron-right"></i></button>
+          </div>
         </div>
         </div>
+        </div>
+        <!-- ── Document Requests Report ── -->
+        <div class="ai-subview" data-ai-subview="docreports" hidden>
+          <button type="button" class="ai-back-btn"><i class="fa-solid fa-arrow-left"></i> Back to AI Tools</button>
+
+          <div class="card" id="docReportsAiCard" style="margin-bottom:1.5rem;border-left:4px solid #1976D2">
+            <div class="registry-header">
+              <div>
+                <h3><i class="fa-solid fa-wand-magic-sparkles"></i> AI Commentary</h3>
+                <p>Interpretation of this report. This section is visible on screen only — it is excluded from CSV exports and printed reports.</p>
+              </div>
+              <div class="registry-actions">
+                <button id="docReportsAiBtn" type="button" class="btn-primary-action">
+                  <i class="fa-solid fa-wand-magic-sparkles"></i> Generate AI Commentary
+                </button>
+              </div>
+            </div>
+            <div id="docReportsAiOutput" class="ai-echo-response" role="status" aria-live="polite">No commentary generated yet.</div>
+          </div>
+
+          <div class="card" style="margin-bottom:1.5rem">
+            <div class="registry-header">
+              <div>
+                <h3><i class="fa-solid fa-file-invoice-dollar"></i> Document Requests — Monthly Summary</h3>
+                <p>Requests issued per month with gross billed and total collected.</p>
+              </div>
+              <div class="registry-actions">
+                <button id="docReportsRefreshBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-rotate"></i> Refresh</button>
+                <button id="docReportsExportBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-file-csv"></i> Export as CSV</button>
+              </div>
+            </div>
+            <div class="stat-cards" id="docRequestStats"></div>
+            <div class="table-wrap" style="margin-top:12px">
+              <table class="data-table">
+                <thead><tr>
+                  <th>Month</th><th>Requests</th><th>Copies</th>
+                  <th>Gross</th><th>Collected</th><th>Pending</th><th>Waived</th>
+                </tr></thead>
+                <tbody id="docRequestMonthlyBody"></tbody>
+              </table>
+            </div>
+            <h4 style="margin:18px 0 8px;color:var(--text-2);font-size:.95rem">By Document Type</h4>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr>
+                  <th>Document</th><th>Requests</th><th>Copies</th><th>Gross</th><th>Collected</th>
+                </tr></thead>
+                <tbody id="docRequestTypeBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="registry-header">
+              <div>
+                <h3><i class="fa-solid fa-tags"></i> Document Prices</h3>
+                <p>Set the unit price charged per print. Default is ₱20.00.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Document</th><th>Price</th><th>Last Updated</th><th class="action-column">Action</th></tr></thead>
+                <tbody id="docPricesBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Complaints Report ── -->
+        <div class="ai-subview" data-ai-subview="complaintreports" hidden>
+          <button type="button" class="ai-back-btn"><i class="fa-solid fa-arrow-left"></i> Back to AI Tools</button>
+
+          <div class="card" id="complaintReportsAiCard" style="margin-bottom:1.5rem;border-left:4px solid #DC2626">
+            <div class="registry-header">
+              <div>
+                <h3><i class="fa-solid fa-wand-magic-sparkles"></i> AI Commentary</h3>
+                <p>Interpretation of this report. This section is visible on screen only — it is excluded from CSV exports and printed reports.</p>
+              </div>
+              <div class="registry-actions">
+                <button id="complaintReportsAiBtn" type="button" class="btn-primary-action">
+                  <i class="fa-solid fa-wand-magic-sparkles"></i> Generate AI Commentary
+                </button>
+              </div>
+            </div>
+            <div id="complaintReportsAiOutput" class="ai-echo-response" role="status" aria-live="polite">No commentary generated yet.</div>
+          </div>
+
+          <div class="card">
+            <div class="registry-header">
+              <div>
+                <h3><i class="fa-solid fa-triangle-exclamation"></i> Complaints — Summary &amp; Ranking</h3>
+                <p>Counts by category, severity, and monthly ranking of the most common type.</p>
+              </div>
+              <div class="registry-actions">
+                <button id="complaintReportsRefreshBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-rotate"></i> Refresh</button>
+                <button id="complaintReportsExportBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-file-csv"></i> Export as CSV</button>
+              </div>
+            </div>
+            <div class="stat-cards" id="complaintStats"></div>
+
+            <div class="dash-row" style="margin-top:1rem">
+              <div class="card dash-card">
+                <div class="dc-head"><h3>By Category</h3></div>
+                <div id="complaintByCategory"></div>
+              </div>
+              <div class="card dash-card">
+                <div class="dc-head"><h3>By Severity</h3></div>
+                <div id="complaintBySeverity"></div>
+              </div>
+            </div>
+
+            <h4 style="margin:18px 0 8px;color:var(--text-2);font-size:.95rem">Category × Severity</h4>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr>
+                  <th>Category</th><th>Low</th><th>Medium</th><th>High</th><th>Critical</th><th>Total</th>
+                </tr></thead>
+                <tbody id="complaintCrossBody"></tbody>
+              </table>
+            </div>
+
+            <h4 style="margin:18px 0 8px;color:var(--text-2);font-size:.95rem">Top Complaint Types — Monthly Ranking</h4>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Month</th><th>Rank</th><th>Category</th><th>Count</th></tr></thead>
+                <tbody id="complaintRankingBody"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
         <div class="ai-subview" data-ai-subview="workforce" hidden>
         <button type="button" class="ai-back-btn"><i class="fa-solid fa-arrow-left"></i> Back to AI Tools</button>

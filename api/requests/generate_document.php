@@ -17,7 +17,9 @@ if (empty($_SESSION['official_id'])) {
 
 require_post();
 
-// Defense-in-depth: official identity placeholders are fixed for generated documents.
+// Placeholder signatory. These are intentionally static until the system
+// has a concept of a designated signing official; every generated document
+// currently bears this name regardless of which official clicked Generate.
 $fixedOfficialName = 'Hon. Erwin Astronomo';
 $fixedOfficialPosition = 'Barangay Captain';
 

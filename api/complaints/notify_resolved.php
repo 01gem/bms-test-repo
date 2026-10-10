@@ -76,8 +76,13 @@ function send_sms_via_httpsms(string $apiKey, string $fromNumber, string $toNumb
 $input = read_json_input();
 $id = (int)($input['id'] ?? 0);
 $officialNote = trim((string)($input['official_note'] ?? ''));
+$severity = trim((string)($input['severity'] ?? ''));
 if ($id <= 0) {
   json_error('Valid complaint id is required.');
+}
+$allowedSeverity = ['low', 'medium', 'high', 'critical'];
+if ($severity !== '' && !in_array($severity, $allowedSeverity, true)) {
+  json_error('Invalid severity. Allowed values are: low, medium, high, critical.');
 }
 
 $db = get_db();
@@ -123,9 +128,15 @@ if ($residentId > 0) {
 }
 
 $status = 'resolved';
-$updateStmt = $db->prepare('UPDATE complaints SET status = ?, official_note = ? WHERE id = ?');
-if (!$updateStmt) json_error('Failed to prepare complaint resolution update.', 500);
-$updateStmt->bind_param('ssi', $status, $officialNote, $id);
+if ($severity !== '') {
+  $updateStmt = $db->prepare('UPDATE complaints SET status = ?, official_note = ?, severity = ? WHERE id = ?');
+  if (!$updateStmt) json_error('Failed to prepare complaint resolution update.', 500);
+  $updateStmt->bind_param('sssi', $status, $officialNote, $severity, $id);
+} else {
+  $updateStmt = $db->prepare('UPDATE complaints SET status = ?, official_note = ? WHERE id = ?');
+  if (!$updateStmt) json_error('Failed to prepare complaint resolution update.', 500);
+  $updateStmt->bind_param('ssi', $status, $officialNote, $id);
+}
 if (!$updateStmt->execute()) {
   json_db_error('Failed to resolve complaint', $updateStmt->error);
 }

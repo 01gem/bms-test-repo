@@ -19,24 +19,22 @@ if (!$officialSession && !$residentSession) {
   exit;
 }
 
-$stmt = $db->prepare('SELECT * FROM document_requests ORDER BY id DESC');
-if (!$stmt) json_error('Failed to prepare requests query.', 500);
-$rows = db_query_all($stmt);
-$stmt->close();
-
-if (!$officialSession) {
+if ($officialSession) {
+  $stmt = $db->prepare('SELECT * FROM document_requests ORDER BY id DESC');
+  if (!$stmt) json_error('Failed to prepare requests query.', 500);
+} else {
   $residentId = !empty($_SESSION['resident_id']) ? (int)$_SESSION['resident_id'] : 0;
   if ($residentId <= 0) {
     http_response_code(401);
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;
   }
-
-  $rows = array_values(array_filter($rows, function ($row) use ($residentId) {
-    $rowResidentId = isset($row['resident_id']) ? (int)$row['resident_id'] : 0;
-    return $rowResidentId === $residentId;
-  }));
+  $stmt = $db->prepare('SELECT * FROM document_requests WHERE resident_id = ? ORDER BY id DESC');
+  if (!$stmt) json_error('Failed to prepare requests query.', 500);
+  $stmt->bind_param('i', $residentId);
 }
+$rows = db_query_all($stmt);
+$stmt->close();
 
 json_success(['requests' => $rows]);
 ?>

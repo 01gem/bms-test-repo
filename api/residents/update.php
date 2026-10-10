@@ -40,7 +40,7 @@ if (count($rows) > 0) {
 }
 
 // Snapshot the fields the workforce classifier reads, so a change can invalidate skill_category.
-$prev = $db->prepare("SELECT occupation, skills, educational_attainment, employment_status FROM residents WHERE id = ? LIMIT 1");
+$prev = $db->prepare("SELECT occupation, educational_attainment, employment_status FROM residents WHERE id = ? LIMIT 1");
 if (!$prev) json_error('Failed to load resident.', 500);
 $prev->bind_param('i', $id);
 $prevRows = db_query_all($prev);
@@ -52,49 +52,42 @@ $birthdate = trim((string)($input['birthdate'] ?? '')) ?: null;
 $civil_status = trim((string)($input['civil_status'] ?? '')) ?: null;
 $purok_zone = trim((string)($input['purok_zone'] ?? '')) ?: null;
 $household_size = isset($input['household_size']) && $input['household_size'] !== '' ? (int)$input['household_size'] : 1;
-$number_of_dependents = isset($input['number_of_dependents']) && $input['number_of_dependents'] !== '' ? (int)$input['number_of_dependents'] : 0;
-$is_household_head = !empty($input['is_household_head']) ? 1 : 0;
 $is_solo_parent = !empty($input['is_solo_parent']) ? 1 : 0;
 $is_pwd = !empty($input['is_pwd']) ? 1 : 0;
 $is_4ps_member = !empty($input['is_4ps_member']) ? 1 : 0;
-$years_of_residency = isset($input['years_of_residency']) && $input['years_of_residency'] !== '' ? (int)$input['years_of_residency'] : 0;
 $educational_attainment = trim((string)($input['educational_attainment'] ?? '')) ?: null;
 $employment_status = trim((string)($input['employment_status'] ?? '')) ?: null;
 $occupation = trim((string)($input['occupation'] ?? '')) ?: null;
-$monthly_income_bracket = trim((string)($input['monthly_income_bracket'] ?? '')) ?: null;
-$skills = trim((string)($input['skills'] ?? '')) ?: null;
-$work_experience_years = isset($input['work_experience_years']) && $input['work_experience_years'] !== '' ? (int)$input['work_experience_years'] : 0;
 $training_certifications = trim((string)($input['training_certifications'] ?? '')) ?: null;
 $work_availability = trim((string)($input['work_availability'] ?? '')) ?: null;
-$has_drivers_license = !empty($input['has_drivers_license']) ? 1 : 0;
 
 // NOTE: household_id, relationship_to_household_head and profile_status are NOT updated here.
 // They are managed exclusively by the household endpoints. This prevents an admin editing
 // a resident from silently unlinking them from a household.
 
-$profiling_set = ", birthdate = ?, civil_status = ?, purok_zone = ?, household_size = ?, number_of_dependents = ?, is_household_head = ?, is_solo_parent = ?, is_pwd = ?, is_4ps_member = ?, years_of_residency = ?, educational_attainment = ?, employment_status = ?, occupation = ?, monthly_income_bracket = ?, skills = ?, work_experience_years = ?, training_certifications = ?, work_availability = ?, has_drivers_license = ?";
+$profiling_set = ", birthdate = ?, civil_status = ?, purok_zone = ?, household_size = ?, is_solo_parent = ?, is_pwd = ?, is_4ps_member = ?, educational_attainment = ?, employment_status = ?, occupation = ?, work_availability = ?, training_certifications = ?";
 
 if ($password !== '') {
   $hash = password_hash($password, PASSWORD_DEFAULT);
   $stmt = $db->prepare("UPDATE residents SET fname = ?, lname = ?, address = ?, contact = ?, username = ?, password = ?" . $profiling_set . " WHERE id = ?");
   if (!$stmt) json_error('Failed to prepare resident update.', 500);
-  $stmt->bind_param('sssssssssiiiiiiisssssissii',
+  $stmt->bind_param('sssssssssiiiisssssi',
     $fname, $lname, $address, $contact, $username, $hash,
-    $birthdate, $civil_status, $purok_zone, $household_size, $number_of_dependents,
-    $is_household_head, $is_solo_parent, $is_pwd, $is_4ps_member, $years_of_residency,
-    $educational_attainment, $employment_status, $occupation, $monthly_income_bracket,
-    $skills, $work_experience_years, $training_certifications, $work_availability, $has_drivers_license,
+    $birthdate, $civil_status, $purok_zone, $household_size,
+    $is_solo_parent, $is_pwd, $is_4ps_member,
+    $educational_attainment, $employment_status, $occupation,
+    $work_availability, $training_certifications,
     $id
   );
 } else {
   $stmt = $db->prepare("UPDATE residents SET fname = ?, lname = ?, address = ?, contact = ?, username = ?" . $profiling_set . " WHERE id = ?");
   if (!$stmt) json_error('Failed to prepare resident update.', 500);
-  $stmt->bind_param('ssssssssiiiiiiisssssissii',
+  $stmt->bind_param('ssssssssiiiisssssi',
     $fname, $lname, $address, $contact, $username,
-    $birthdate, $civil_status, $purok_zone, $household_size, $number_of_dependents,
-    $is_household_head, $is_solo_parent, $is_pwd, $is_4ps_member, $years_of_residency,
-    $educational_attainment, $employment_status, $occupation, $monthly_income_bracket,
-    $skills, $work_experience_years, $training_certifications, $work_availability, $has_drivers_license,
+    $birthdate, $civil_status, $purok_zone, $household_size,
+    $is_solo_parent, $is_pwd, $is_4ps_member,
+    $educational_attainment, $employment_status, $occupation,
+    $work_availability, $training_certifications,
     $id
   );
 }
@@ -108,7 +101,6 @@ $stmt->close();
 if ($previousProfile !== null) {
   $classifierInputs = [
     'occupation' => $occupation,
-    'skills' => $skills,
     'educational_attainment' => $educational_attainment,
     'employment_status' => $employment_status,
   ];

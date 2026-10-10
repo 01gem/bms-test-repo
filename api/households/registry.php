@@ -20,8 +20,8 @@ $purok = trim((string)($_GET['purok'] ?? ''));
 $sql = 'SELECT h.id, h.household_code, h.head_resident_id, h.address, h.purok_zone,
   h.household_size, h.profile_status, h.profile_completeness, h.profiled_at,
   h.assessment_complete, h.assessment_method_version, h.mpi_score, h.mpi_status,
-  h.annual_household_income, h.annual_per_capita_income, h.income_poverty_status,
-  h.mpi_indicators_json,
+  h.annual_household_income, h.annual_per_capita_income,   h.income_poverty_status,
+  h.mpi_indicators_json, h.updated_at,
   r.fname AS head_fname, r.lname AS head_lname
   FROM households h
   LEFT JOIN residents r ON r.id = h.head_resident_id';
@@ -55,6 +55,7 @@ $items = array_map(fn(array $r) => [
   'annual_per_capita_income'  => $r['annual_per_capita_income'] !== null ? (float)$r['annual_per_capita_income'] : null,
   'income_poverty_status'     => $r['income_poverty_status'],
   'mpi_indicators_json'       => $r['mpi_indicators_json'],
+  'updated_at'                => $r['updated_at'],
 ], $rows);
 
 json_success(['households' => $items]);

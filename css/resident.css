@@ -122,15 +122,6 @@ body.sidebar-collapsed { --sidebar-w: 80px; }
 .snav-item:hover { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.9); }
 .snav-item.active { background: var(--blue-mid); color: white; box-shadow: 0 3px 12px rgba(25,118,210,0.35); }
 .nav-text { display: inline-block; vertical-align: middle; overflow: hidden; transition: opacity var(--t) ease, max-width var(--t) ease; }
-.badge-count {
-  margin-left: auto;
-  background: var(--amber);
-  color: var(--navy-dk);
-  font-size: 10px; font-weight: 700;
-  padding: 2px 7px; border-radius: 100px;
-  min-width: 20px; text-align: center;
-}
-.notif-badge { background: var(--danger); color: white; }
 .sidebar-footer {
   padding: 12px; border-top: 1px solid rgba(255,255,255,0.07);
   flex-shrink: 0;
@@ -202,17 +193,6 @@ body.sidebar-collapsed .main-area {
 body::-webkit-scrollbar:horizontal,
 .sidebar::-webkit-scrollbar:horizontal {
   height: 0 !important;
-}
-
-/* Hide slider-like UI when sidebar is collapsed (covers range inputs, carousels, and slider classes) */
-body.sidebar-collapsed .slider,
-body.sidebar-collapsed .range-slider,
-body.sidebar-collapsed input[type="range"],
-body.sidebar-collapsed [role="slider"],
-body.sidebar-collapsed .slick-slider,
-body.sidebar-collapsed .carousel,
-body.sidebar-collapsed .slider-container {
-  display: none !important;
 }
 
 /* ── MAIN AREA ───────────────────────────── */
@@ -505,6 +485,15 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 .status-cancelled { background: #EDE9FE; color: #6D28D9; }
 .status-open      { background: var(--danger-lt);  color: var(--danger); }
 .status-resolved  { background: var(--success-lt); color: var(--success); }
+.status-unpaid    { background: var(--warning-lt); color: var(--warning); }
+.status-paid      { background: var(--success-lt); color: var(--success); }
+.status-waived    { background: #E2E6ED;  color: #475569; }
+.btn-submit-form:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--blue-mid);
+}
+.btn-submit-form:disabled:hover { background: var(--blue-mid); }
 
 /* ── COMPLAINTS LIST ─────────────────────── */
 .complaints-list { display: flex; flex-direction: column; gap: 14px; }
@@ -637,3 +626,29 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 .mr-text { flex: 1; }
 .mr-title { font-size: 13px; font-weight: 600; color: var(--text); }
 .mr-sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+/* ── MODAL ───────────────────────────────── */
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(11,30,69,0.55);
+  backdrop-filter: blur(6px);
+  z-index: 9999;
+  align-items: center; justify-content: center;
+  padding: 1rem;
+}
+.modal-overlay.show { display: flex; }
+.modal-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px;
+  max-width: 460px;
+  width: 100%;
+  box-shadow: var(--shadow-md);
+  animation: popIn 0.25s ease;
+}
+@keyframes popIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
