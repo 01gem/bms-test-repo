@@ -34,6 +34,9 @@ let AUDIT_LOG = [];
 let ACTIVE_DOC_GEN_REQUEST = null;
 const FIXED_OFFICIAL_NAME = 'Hon. Erwin Astronomo';
 const FIXED_OFFICIAL_POSITION = 'Barangay Captain';
+function featureEnabled(name) {
+  return name === 'sms' ? !!window.SMS_CONFIGURED : !!window.AI_CONFIGURED;
+}
 function peso(n) {
   return '₱' + Number(n || 0).toFixed(2);
 }
@@ -511,7 +514,8 @@ function openDocumentGenerationModal(ref) {
   const previewWrap = document.getElementById('docGenPreviewWrap');
   const previewEmpty = document.getElementById('docGenPreviewEmpty');
   if (title) title.textContent = `Generate ${req.type}`;
-  if (meta) meta.textContent = `Reference: ${req.ref} · Resident: ${req.resident}`;
+  if (meta) meta.textContent =
+    `Reference: ${req.ref} · Resident: ${req.resident} · Signed by ${FIXED_OFFICIAL_NAME} (${FIXED_OFFICIAL_POSITION}) — fixed for this build`;
   if (previewWrap) previewWrap.style.display = 'none';
   if (previewEmpty) previewEmpty.style.display = 'flex';
   renderDocumentGenerationFields(req);
@@ -597,6 +601,16 @@ function initAiHub() {
   document.querySelectorAll('.ai-back-btn').forEach(btn => {
     btn.addEventListener('click', () => showAiView(null));
   });
+  if (!featureEnabled('ai')) {
+    const hub = document.getElementById('aiHub');
+    if (hub && !hub.querySelector('.ai-disabled-note')) {
+      const note = document.createElement('p');
+      note.className = 'ai-disabled-note';
+      note.textContent = 'AI features are disabled in this build (GEMINI_API_KEY not configured).';
+      hub.parentElement.insertBefore(note, hub);
+    }
+    if (hub) hub.querySelectorAll('button.ai-tool-tile').forEach(b => { b.disabled = true; });
+  }
 }
 
 async function loadDocumentPrices() {
@@ -3521,16 +3535,20 @@ function requestActionButtonsHtml(req) {
     ['Process',         'process', `openDocumentGenerationModal('${ref}')`, req.status === 'pending'],
     ['Mark Ready',      'ready',   `updateReqStatus('${ref}','ready')`,     req.status === 'processing'],
     ['Complete',        'approve', `updateReqStatus('${ref}','completed')`, req.status === 'ready'],
-    ['Notify via SMS',  'notify',  `notifyPickupReady('${ref}')`,           req.status === 'ready'],
+    ['Notify via SMS',  'notify',  `notifyPickupReady('${ref}')`,           featureEnabled('sms') && req.status === 'ready'],
     ['Cancel Request',  'reject',  `cancelReq('${ref}')`,                   ['pending','processing'].includes(req.status)],
     ['Mark Paid',       'approve', `updateReqPayment('${ref}','paid')`,     req.paymentStatus === 'unpaid' && !isTerminal],
     ['Waive',           'reject',  `updateReqPayment('${ref}','waived')`,   req.paymentStatus === 'unpaid' && !isTerminal],
   ];
 
-  const buttons = specs.map(([label, cls, handler, enabled]) => enabled
-    ? `<button type="button" class="btn-action ${cls}" onclick="${handler}">${label}</button>`
-    : `<button type="button" class="btn-action ${cls}" disabled>${label}</button>`
-  ).join('');
+  const buttons = specs.map(([label, cls, handler, enabled]) => {
+    if (label === 'Notify via SMS' && !featureEnabled('sms')) {
+      return `<button type="button" class="btn-action ${cls}" disabled title="SMS is not configured in this build">${label}</button>`;
+    }
+    return enabled
+      ? `<button type="button" class="btn-action ${cls}" onclick="${handler}">${label}</button>`
+      : `<button type="button" class="btn-action ${cls}" disabled>${label}</button>`;
+  }).join('');
 
   return `<div class="request-modal-actions">${buttons}</div>`;
 }

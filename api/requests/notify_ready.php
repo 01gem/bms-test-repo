@@ -64,7 +64,7 @@ $smsMessage = "Hello {$safeResident}, your requested document ({$request['docume
 
 function send_sms_via_httpsms(string $apiKey, string $fromNumber, string $toNumber, string $content, string $simSlot = 'SIM1'): void {
   if ($apiKey === '' || $fromNumber === '' || $toNumber === '' || $content === '') {
-    json_error('SMS configuration or recipient data is missing.', 500);
+    json_error('SMS is not configured on this server.', 503);
   }
 
   $payload = json_encode([
@@ -78,7 +78,7 @@ function send_sms_via_httpsms(string $apiKey, string $fromNumber, string $toNumb
   }
 
   if (!function_exists('curl_init')) {
-    json_error('SMS send failed: PHP cURL extension is not enabled.', 500);
+    json_error('SMS is not configured on this server.', 503);
   }
 
   $ch = curl_init('https://api.httpsms.com/v1/messages/send');

@@ -73,6 +73,12 @@ if ($announcementId <= 0) {
   json_error('Valid announcement id is required.');
 }
 
+$smsApiKey = getenv('HTTPSMS_API_KEY') ?: '';
+$smsFromNumber = getenv('HTTPSMS_FROM_NUMBER') ?: '';
+if ($smsApiKey === '' || $smsFromNumber === '') {
+  json_error('SMS is not configured on this server.', 503);
+}
+
 $db = get_db();
 $announcementStmt = $db->prepare('SELECT title, content FROM announcements WHERE id = ? LIMIT 1');
 if (!$announcementStmt) json_error('Failed to prepare announcement lookup.', 500);
@@ -101,8 +107,6 @@ $residentsStmt->close();
 $sent = 0;
 $skipped = 0;
 $failed = 0;
-$smsApiKey = getenv('HTTPSMS_API_KEY') ?: '';
-$smsFromNumber = getenv('HTTPSMS_FROM_NUMBER') ?: '';
 $smsSimSlot = getenv('HTTPSMS_SIM_SLOT') ?: 'SIM1';
 
 foreach ($residents as $resident) {

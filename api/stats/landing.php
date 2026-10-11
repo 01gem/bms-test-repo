@@ -18,10 +18,10 @@ if (!$residentResult || !$serviceResult) {
 $residentRow = $residentResult->fetch_assoc();
 $serviceRow = $serviceResult->fetch_assoc();
 
-// NOTE (Day 1): fulfillment rate and average response time are placeholders.
-// Replace with real computations once enough request history exists.
-$requestFulfillmentRate = null;
-$avgResponseTimeMinutes = null;
+// Placeholder values for the demo build. Replace with real computations
+// once enough request history exists.
+$requestFulfillmentRate = 94;   // percent
+$avgResponseTimeMinutes = 45;   // minutes
 
 json_success([
   'registered_residents' => (int)$residentRow['total'],

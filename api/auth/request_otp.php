@@ -58,10 +58,10 @@ $payload = json_encode([
   'sim' => $simSlot
 ]);
 if ($payload === false || !function_exists('curl_init')) {
-  json_error('Password reset SMS could not be sent.', 500);
+  json_error('Password reset SMS could not be sent.', 503);
 }
 $ch = curl_init('https://api.httpsms.com/v1/messages/send');
-if ($ch === false) json_error('Password reset SMS could not be sent.', 500);
+if ($ch === false) json_error('Password reset SMS could not be sent.', 503);
 curl_setopt_array($ch, [
   CURLOPT_POST => true,
   CURLOPT_RETURNTRANSFER => true,

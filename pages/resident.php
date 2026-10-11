@@ -158,7 +158,7 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
         <div class="welcome-banner">
           <div class="wb-text">
             <h2>Good morning, <em>Resident</em>! 👋</h2>
-            <p>You have <strong>0 pending document requests</strong> and <strong>0 active complaints</strong>.</p>
+            <p>You have <strong><span id="wbPendingRequests">0</span> pending document requests</strong> and <strong><span id="wbActiveComplaints">0</span> active complaints</strong>.</p>
           </div>
           <div class="wb-actions">
             <button class="btn-quick" onclick="switchTab('requests')"><i class="fa-solid fa-file-circle-plus"></i> New Request</button>

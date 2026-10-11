@@ -395,10 +395,16 @@ if (count($officialNameParts) >= 2) {
             </div>
             <div class="field" style="margin-top:12px;"><label>Content</label><textarea class="form-input" rows="5" placeholder="Write the announcement content here…" required></textarea></div>
             <div class="field" style="margin-top:12px;"><label>Expires On <span class="opt-label">(optional — leave blank for a permanent announcement)</span></label><input id="announcementExpiresAt" type="datetime-local" class="form-input" /></div>
+            <?php if (getenv('HTTPSMS_API_KEY') && getenv('HTTPSMS_FROM_NUMBER')): ?>
             <div class="field" style="margin-top:8px;">
               <label>Send SMS Notification to Residents? <span class="opt-label">(via httpSMS)</span></label>
               <label class="toggle-label"><input type="checkbox" id="smsToggle" /> <span class="toggle-switch"></span> <span>Yes, send SMS to all registered residents</span></label>
             </div>
+            <?php else: ?>
+            <div class="field" style="margin-top:8px;">
+              <small style="color:var(--text-3);font-size:12px">SMS notifications are disabled in this build.</small>
+            </div>
+            <?php endif; ?>
             <div class="form-actions"><button type="submit" class="btn-submit-form">Post Announcement</button><button type="button" class="btn-cancel-form" id="cancelAnnForm">Cancel</button></div>
             </form>
           </div>
@@ -572,6 +578,7 @@ if (count($officialNameParts) >= 2) {
               <button id="registryExportBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-file-csv"></i> Export as CSV</button>
             </div>
           </div>
+          <p class="registry-note">Rate limit: 200 households per hour per official.</p>
           <div class="table-toolbar">
             <select id="vulnerabilityPurokFilter" class="table-filter" aria-label="Filter vulnerability registry by Purok">
               <option value="all">All Puroks</option>
@@ -616,6 +623,7 @@ if (count($officialNameParts) >= 2) {
               <button id="householdExportBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-file-csv"></i> Export as CSV</button>
             </div>
           </div>
+          <p class="registry-note">Rate limit: 200 households per hour per official.</p>
           <div class="table-toolbar">
             <select id="householdPurokFilter" class="table-filter" aria-label="Filter household registry by Purok">
               <option value="all">All Puroks</option>
@@ -776,6 +784,7 @@ if (count($officialNameParts) >= 2) {
               <button id="workforceClassifyBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-tags"></i> Classify Workforce</button>
             </div>
           </div>
+          <p class="registry-note">Rate limit: 200 households per hour per official.</p>
           <div class="table-toolbar">
             <select id="workforcePurokFilter" class="table-filter" aria-label="Filter workforce insights by Purok">
               <option value="all">All Puroks</option>
@@ -900,6 +909,8 @@ if (count($officialNameParts) >= 2) {
   <script>
     window.IS_OFFICIAL_ADMIN = <?php echo $isOfficialAdmin ? 'true' : 'false'; ?>;
     window.OFFICIAL_ID = <?php echo (int)$_SESSION['official_id']; ?>;
+    window.SMS_CONFIGURED = <?= (getenv('HTTPSMS_API_KEY') && getenv('HTTPSMS_FROM_NUMBER')) ? 'true' : 'false'; ?>;
+    window.AI_CONFIGURED  = <?= getenv('GEMINI_API_KEY') ? 'true' : 'false'; ?>;
   </script>
   <script src="../js/official.js?v=<?= filemtime(__DIR__ . '/../js/official.js') ?>"></script>
 </body>

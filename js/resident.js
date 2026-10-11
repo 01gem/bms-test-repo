@@ -750,6 +750,14 @@ function formatCommunityDate(value) {
 }
 
 async function refreshResidentView() {
+  const wbPending = document.getElementById('wbPendingRequests');
+  const wbActive  = document.getElementById('wbActiveComplaints');
+  if (wbPending) wbPending.textContent = String(
+    REQUESTS.filter(r => r.status === 'pending').length
+  );
+  if (wbActive) wbActive.textContent = String(
+    COMPLAINTS.filter(c => c.status !== 'resolved').length
+  );
   renderDashStats();
   renderRecentRequests();
   renderRecentComplaints();
