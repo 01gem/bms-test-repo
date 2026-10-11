@@ -254,7 +254,27 @@ function initSidebarToggle() {
   } catch (err) {
     collapsed = false;
   }
+  // Phones: default to collapsed so the fixed 260px sidebar doesn't eat
+  // the viewport. Don't persist this override — localStorage is for the
+  // user's desktop preference.
+  const phoneQuery = window.matchMedia('(max-width: 640px)');
+  if (phoneQuery.matches) {
+    collapsed = true;
+  }
   applySidebarState(collapsed);
+  phoneQuery.addEventListener('change', () => {
+    if (phoneQuery.matches) {
+      applySidebarState(true);
+      return;
+    }
+    let stored = false;
+    try {
+      stored = localStorage.getItem(SIDEBAR_STATE_KEY) === '1';
+    } catch (err) {
+      stored = false;
+    }
+    applySidebarState(stored);
+  });
   toggle.addEventListener('click', () => {
     const next = !document.body.classList.contains('sidebar-collapsed');
     applySidebarState(next);

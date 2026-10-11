@@ -878,3 +878,41 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   color: var(--text-3);
   border-color: var(--border);
 }
+
+@media (max-width: 900px) {
+  .profile-grid { grid-template-columns: 1fr; gap: 1rem; }
+  .official-profile-grid .profile-card { padding: 24px 18px; }
+  .official-profile-grid .profile-avatar-big { width: 60px; height: 60px; font-size: 20px; }
+  .official-profile-grid .profile-name-big { font-size: 1.25rem; }
+  .docgen-modal-grid { grid-template-columns: 1fr; }
+  .docgen-preview-empty,
+  .docgen-preview-wrap,
+  .docgen-preview-frame { min-height: 340px; height: 340px; }
+}
+
+@media (max-width: 640px) {
+  .stat-cards { grid-template-columns: 1fr; gap: 0.75rem; }
+  .stat-card { padding: 14px 16px; gap: 12px; }
+  .sc-ico { width: 40px; height: 40px; font-size: 18px; }
+  .sc-data .sc-val { font-size: 1.5rem; }
+
+  .topbar-right { gap: 8px; }
+  .official-chip { font-size: 11px; padding: 4px 10px; }
+  .topbar-user span { display: none; }
+
+  .modal-box { padding: 20px; width: 94vw; max-width: 94vw; }
+  .detail-modal-box { width: 94vw; padding: 20px; }
+  .docgen-modal-box { width: 96vw; padding: 20px; }
+
+  .registry-actions { width: 100%; }
+  .registry-actions .btn-primary-action { width: 100%; justify-content: center; }
+
+  .ai-tool-tile { padding: 16px 18px; gap: 12px; }
+  .ai-tile-ico { width: 40px; height: 40px; font-size: 18px; }
+  .ai-tile-title { font-size: 0.95rem; }
+  .ai-tile-desc { font-size: 12px; }
+
+  .audit-action-tag { font-size: 10px; padding: 2px 7px; }
+  .ann-admin-item { flex-direction: column; gap: 10px; }
+  .aai-actions { flex-direction: row; flex-wrap: wrap; }
+}

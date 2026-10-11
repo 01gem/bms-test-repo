@@ -652,3 +652,59 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   from { transform: scale(0.95); opacity: 0; }
   to   { transform: scale(1);    opacity: 1; }
 }
+
+/* ── MOBILE ──────────────────────────────── */
+@media (max-width: 900px) {
+  .dash-grid { grid-template-columns: 1fr; gap: 1rem; }
+  .profile-grid { grid-template-columns: 1fr; gap: 1rem; }
+  .form-3col { grid-template-columns: 1fr; }
+  .welcome-banner { padding: 20px; }
+  .wb-text h2 { font-size: 1.35rem; }
+  .wb-actions { width: 100%; }
+  .wb-actions > button { flex: 1 1 auto; }
+}
+
+@media (max-width: 640px) {
+  .content-area { padding: 1rem; }
+  .main-area { min-width: 0; }
+  .topbar { padding: 0 1rem; }
+  .topbar-right { gap: 8px; }
+  .topbar-user span { display: none; }
+
+  .stat-cards { grid-template-columns: repeat(2, 1fr); gap: 0.75rem; margin-bottom: 1.25rem; }
+  .stat-card { padding: 14px 16px; gap: 12px; }
+  .sc-ico { width: 38px; height: 38px; border-radius: 10px; font-size: 17px; }
+  .sc-data .sc-val { font-size: 1.5rem; }
+  .sc-data .sc-lbl { font-size: 10px; }
+
+  .form-2col { grid-template-columns: 1fr; gap: 12px; }
+  .tab-header { flex-wrap: wrap; gap: 0.75rem; }
+  .tab-header h2 { font-size: 1.25rem; }
+  .btn-primary-action { width: 100%; justify-content: center; }
+
+  .table-toolbar { gap: 8px; }
+  .table-search { min-width: 100%; }
+  .table-filter { width: 100%; }
+
+  .profile-card { padding: 24px 18px; }
+  .profile-avatar-big { width: 60px; height: 60px; font-size: 20px; }
+  .profile-name-big { font-size: 1.25rem; }
+  .card { padding: 16px; }
+  .card-section-title { font-size: 0.95rem; }
+
+  .modal-box { padding: 20px; width: 94vw; max-width: 94vw; }
+  .form-actions > button { flex: 1 1 auto; min-width: 0; }
+
+  .filter-btn { padding: 6px 12px; font-size: 12px; }
+  .complaint-item { padding: 14px 16px; }
+  .ci-title { font-size: 1rem; }
+  .ci-meta { font-size: 11px; gap: 10px; }
+
+  .notif-item { padding: 14px 16px; gap: 10px; }
+  .ni-icon { width: 34px; height: 34px; font-size: 14px; }
+  .notif-drawer { width: 100vw; max-width: 100vw; }
+}
+
+@media (max-width: 380px) {
+  .stat-cards { grid-template-columns: 1fr; }
+}

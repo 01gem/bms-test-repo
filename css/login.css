@@ -493,3 +493,42 @@ a { text-decoration: none; color: inherit; }
   transition: all var(--t);
 }
 .btn-modal-ok:hover { background: var(--blue); }
+
+/* ── MOBILE ──────────────────────────────── */
+@media (max-width: 900px) {
+  .auth-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    height: auto;
+    max-height: none;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+  .auth-left {
+    min-height: 0;
+    overflow: visible;
+  }
+  .auth-left-inner { padding: 28px 1.25rem 20px; }
+  .auth-left-content { padding: 0.5rem 0 0; }
+  .auth-left-content h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+  .auth-left-content p { font-size: 14px; margin-bottom: 0; }
+  .al-badge { margin-bottom: 0.75rem; }
+  .al-check-sections { display: none; }
+  .auth-left-deco { display: none; }
+
+  .auth-right {
+    align-items: flex-start;
+    padding: 24px 1.25rem 40px;
+    overflow: visible;
+  }
+  .auth-right-inner { max-width: 100%; }
+  .form-header h2 { font-size: 1.4rem; }
+  .auth-tabs { margin-bottom: 20px; }
+  .btn-submit { padding: 12px; font-size: 14px; }
+}
+
+@media (max-width: 480px) {
+  .form-2col { grid-template-columns: 1fr; }
+  .reset-card { padding: 22px; }
+  .modal-box { padding: 24px; }
+}
