@@ -3246,9 +3246,53 @@ async function editAnnouncement(id) {
 function viewAnnouncement(id) {
   const announcement = ANNOUNCEMENTS_DATA.find(a => Number(a.id) === Number(id));
   if (announcement) {
-    document.getElementById('actionModalBox')?.classList.remove('detail-modal-box');
-    showModal(announcement.title, announcement.content);
+    showAnnouncementModal(announcement);
   }
+}
+
+function showAnnouncementModal(announcement) {
+  const isPinned = Number(announcement.is_pinned) === 1;
+  const isExpired = Number(announcement.is_expired) === 1;
+
+  const statusBadge = isExpired
+    ? '<span class="status-badge status-cancelled">Expired</span>'
+    : '<span class="status-badge status-active">Active</span>';
+
+  const pinBadge = isPinned
+    ? '<span class="status-badge status-processing" style="margin-right:6px"><i class="fa-solid fa-thumbtack"></i> Pinned</span>'
+    : '';
+
+  const bodyHtml = `
+    <div class="detail-grid" style="margin-bottom: 20px; grid-template-columns: 1fr 1fr;">
+      <div class="detail-field">
+        <dt>Status</dt>
+        <dd>${pinBadge} ${statusBadge}</dd>
+      </div>
+      <div class="detail-field">
+        <dt>Date Posted</dt>
+        <dd>${formatAnnouncementDate(announcement.created_at)}</dd>
+      </div>
+      <div class="detail-field" style="grid-column: 1 / -1;">
+        <dt>Expiration</dt>
+        <dd>${announcement.expires_at ? formatAnnouncementDate(announcement.expires_at) : 'No expiration set'}</dd>
+      </div>
+    </div>
+    <div style="font-size:14px;color:var(--text-2);line-height:1.7;white-space:pre-wrap; background: var(--surface-2); padding: 16px; border-radius: 8px; border: 1px solid var(--border);">${escapeHtml(announcement.content)}</div>
+  `;
+
+  const box = document.getElementById('actionModalBox');
+  box.classList.remove('detail-modal-box');
+  box.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+      <h3 style="font-size:1.3rem;font-weight:600;color:var(--text)">${escapeHtml(announcement.title)}</h3>
+      <button onclick="closeModal()" style="background:none;border:none;font-size:18px;color:var(--text-3);cursor:pointer"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div style="margin-bottom:20px">
+      ${bodyHtml}
+    </div>
+    <button onclick="closeModal()" style="padding:9px 24px;background:var(--blue-mid);color:white;border:none;border-radius:7px;font-family:'Inter',sans-serif;font-size:13px;font-weight:700;cursor:pointer">Close</button>
+  `;
+  document.getElementById('actionModal').classList.add('show');
 }
 async function toggleAnnouncementPin(id) {
   const announcement = ANNOUNCEMENTS_DATA.find(a => Number(a.id) === Number(id));
