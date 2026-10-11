@@ -31,7 +31,7 @@ See the LICENSE file in the project root for the full text.
       households/        profiling wizard, registry, MPI engine
       ...
     css/                 stylesheets (one per portal)
-    database/            schema, migrations, demo seed, engine test
+    database/            schema, migrations, household seed, engine test
     js/                  front-end controllers (one per portal)
     pages/               PHP-rendered pages (login, resident, official)
 
@@ -46,11 +46,9 @@ See the LICENSE file in the project root for the full text.
 
        mysql -uroot barangay_system_test_environment < database/database.sql
        mysql -uroot barangay_system_test_environment < database/migration_household_profiling.sql
-       mysql -uroot barangay_system_test_environment < database/seed_demo_households.sql
+       mysql -uroot barangay_system_test_environment < database/seed_households.sql
 
    The seed already writes canonical `+63` numbers for every account. `database/migration_normalize_phone.sql` is only needed when upgrading a pre-existing database.
-
-   The seed is demonstration data only; do not run it against production.
 
 3. Create a `.env` file at the project root with:
 
@@ -66,12 +64,15 @@ See the LICENSE file in the project root for the full text.
 
 ## Verifying the MPI engine
 
-The engine has a hand-computed fixture of 35 demonstration households. Run:
+The engine has a hand-computed fixture of 35 seeded households. Run:
 
     php database/test_mpi_engine.php
 
-Expected output ends with `Results: 35/35 match`. Any mismatch is an
-engine bug, not a data bug.
+The test loads households whose ids are 1-35 (the range
+database/seed_households.sql owns), reads each linked profile and
+threshold, and diffs the computed assessment against the seed's stored
+values. Expected output ends with `Results: 35/35 match`. Any mismatch is
+an engine bug, not a data bug.
 
 ## Known caveats
 

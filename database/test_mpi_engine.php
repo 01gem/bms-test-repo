@@ -2,9 +2,10 @@
 /**
  * BarangayLink — MPI engine integration test.
  *
- * Loads every HH-DEMO-* household from the test database, runs assess_household()
- * on the linked profile and threshold, and diffs the result against the values
- * the seed hard-codes. Any mismatch is an engine bug.
+ * Loads the 35 seed households (ids 1-35) from the test database, runs
+ * assess_household() on the linked profile and threshold, and diffs the
+ * result against the values database/seed_households.sql hard-codes.
+ * Any mismatch is an engine bug.
  *
  * Run:  php database/test_mpi_engine.php
  * Exit: 0 when every household matches, 1 on any mismatch or setup error.
@@ -25,11 +26,11 @@ try {
 // connecting so query/prepare failures below throw instead of returning false.
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
-$result = $db->query("SELECT * FROM households WHERE household_code LIKE 'HH-DEMO-%' ORDER BY id ASC");
+$result = $db->query("SELECT * FROM households WHERE id BETWEEN 1 AND 35 ORDER BY id ASC");
 $households = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 
 if (!$households) {
-  fwrite(STDERR, "No HH-DEMO-* households found. Run database/seed_demo_households.sql first.\n");
+  fwrite(STDERR, "No seed households found (ids 1-35 missing). Run database/seed_households.sql first.\n");
   exit(1);
 }
 

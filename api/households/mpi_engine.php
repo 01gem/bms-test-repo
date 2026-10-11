@@ -10,7 +10,7 @@
  * Include from endpoint files that own the DB/HTTP concerns, and from
  * database/test_mpi_engine.php for verification against the seed.
  *
- * Spec source: database/seed_demo_households.sql header comment.
+ * Spec source: database/seed_households.sql header comment.
  *
  * Weights are counted in 24ths. Four dimensions, 6/24 each, split evenly
  * inside a dimension:
