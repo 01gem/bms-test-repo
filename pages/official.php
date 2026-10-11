@@ -673,7 +673,7 @@ if (count($officialNameParts) >= 2) {
                 <button id="docReportsExportBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-file-csv"></i> Export as CSV</button>
               </div>
             </div>
-            <div class="stat-cards" id="docRequestStats"></div>
+            <div class="stat-cards is-compact" id="docRequestStats"></div>
             <div class="table-wrap" style="margin-top:12px">
               <table class="data-table">
                 <thead><tr>
@@ -740,7 +740,7 @@ if (count($officialNameParts) >= 2) {
                 <button id="complaintReportsExportBtn" type="button" class="btn-primary-action"><i class="fa-solid fa-file-csv"></i> Export as CSV</button>
               </div>
             </div>
-            <div class="stat-cards" id="complaintStats"></div>
+            <div class="stat-cards is-compact" id="complaintStats"></div>
 
             <div class="dash-row" style="margin-top:1rem">
               <div class="card dash-card">
