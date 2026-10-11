@@ -108,6 +108,7 @@ $smsSimSlot = getenv('HTTPSMS_SIM_SLOT') ?: 'SIM1';
 foreach ($residents as $resident) {
   $residentId = (int)$resident['id'];
   $contact = trim((string)($resident['contact'] ?? ''));
+  $contact = normalize_ph_phone($contact) ?? $contact;
   if ($contact === '') {
     $skipped++;
     continue;

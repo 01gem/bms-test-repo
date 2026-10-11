@@ -53,6 +53,7 @@ if (count($resContactRows) === 0) {
   json_error('Linked resident record not found for this request.', 404);
 }
 $residentContact = $contactOverride !== '' ? $contactOverride : trim((string)($resContactRows[0]['contact'] ?? ''));
+$residentContact = normalize_ph_phone($residentContact) ?? $residentContact;
 
 if ($residentContact === '') {
   json_error('Resident contact number not found. Enter the number manually when sending SMS.', 400);

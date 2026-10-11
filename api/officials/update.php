@@ -19,6 +19,7 @@ $fname = trim((string)($input['fname'] ?? ''));
 $lname = trim((string)($input['lname'] ?? ''));
 $address = trim((string)($input['address'] ?? ''));
 $contact = trim((string)($input['contact'] ?? ''));
+$contact = normalize_ph_phone($contact) ?? $contact;
 $username = trim((string)($input['username'] ?? ''));
 $password = (string)($input['password'] ?? '');
 $position = trim((string)($input['position'] ?? ''));

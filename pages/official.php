@@ -184,7 +184,7 @@ if (count($officialNameParts) >= 2) {
               <div class="field"><label>Last Name</label><input type="text" name="lname" class="form-input" required /></div>
             </div>
             <div class="form-2col">
-              <div class="field"><label>Contact</label><input type="text" name="contact" class="form-input" required /></div>
+              <div class="field"><label>Contact</label><input type="text" name="contact" class="form-input" required placeholder="+639171234567" /><small style="color:var(--text-3);font-size:11px">Philippine mobile number, format +639XXXXXXXXX</small></div>
               <div class="field"><label>Username</label><input type="text" name="username" class="form-input" required /></div>
             </div>
             <div class="field"><label>Address</label><input type="text" name="address" class="form-input" required /></div>
@@ -461,7 +461,7 @@ if (count($officialNameParts) >= 2) {
               <div class="field"><label>Last Name</label><input type="text" name="lname" class="form-input" required /></div>
             </div>
             <div class="form-2col">
-              <div class="field"><label>Contact</label><input type="text" name="contact" class="form-input" required /></div>
+              <div class="field"><label>Contact</label><input type="text" name="contact" class="form-input" required placeholder="+639171234567" /><small style="color:var(--text-3);font-size:11px">Philippine mobile number, format +639XXXXXXXXX</small></div>
               <div class="field"><label>Username</label><input type="text" name="username" class="form-input" required /></div>
             </div>
             <div class="field"><label>Address</label><input type="text" name="address" class="form-input" required /></div>

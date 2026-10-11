@@ -48,6 +48,8 @@ See the LICENSE file in the project root for the full text.
        mysql -uroot barangay_system_test_environment < database/migration_household_profiling.sql
        mysql -uroot barangay_system_test_environment < database/seed_demo_households.sql
 
+   The seed already writes canonical `+63` numbers for every account. `database/migration_normalize_phone.sql` is only needed when upgrading a pre-existing database.
+
    The seed is demonstration data only; do not run it against production.
 
 3. Create a `.env` file at the project root with:
@@ -98,6 +100,15 @@ engine bug, not a data bug.
   and is not in scope for this deployment pass.
 - No migration runner. Migrations are `.sql` files applied by hand.
   Each file is idempotent and safe to re-run.
+- Document-specific extra fields (e.g. civil_status for Barangay
+  Clearance) are captured at request time in
+  `document_requests.request_fields_json` and pre-fill the official
+  generate-document modal. Fields are whitelisted per document type in
+  `api/requests/create.php`; unknown keys in the resident's payload are
+  silently dropped. The resident's birthdate remains the source of truth
+  for age — the value the resident typed is stored for audit but the
+  generator computes it fresh from birthdate when the modal left age
+  blank.
 
 ## License
 

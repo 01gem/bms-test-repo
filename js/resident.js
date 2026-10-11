@@ -49,9 +49,105 @@ function updateRequestTotal() {
   if (submitEl) submitEl.disabled = false;
 }
 
+const DOC_REQUEST_EXTRA_FIELDS = {
+  'Barangay Clearance': [
+    { name: 'age', label: 'Age', type: 'number', min: 0, max: 120, required: true, prefill: 'age' },
+    { name: 'civil_status', label: 'Civil Status', type: 'select', required: true, prefill: 'civil_status',
+      options: ['Single', 'Married', 'Widowed', 'Separated'] },
+  ],
+  'Certificate of Residency': [
+    { name: 'years_of_residency', label: 'Years of Residency', type: 'number', min: 0, required: true },
+  ],
+  'Business Permit Endorsement': [
+    { name: 'business_name', label: 'Business Name', type: 'text', required: true },
+    { name: 'business_type', label: 'Business Type', type: 'text', required: true,
+      placeholder: 'e.g. Sari-sari store, Carinderia, Repair shop' },
+  ],
+};
+
+// Flat key → label index, built once at module load. Keeps
+// requestFieldLabel O(1) as the whitelist grows. Null prototype so a
+// key like 'constructor' or '__proto__' can't collide with Object's
+// own properties.
+const REQUEST_FIELD_LABELS = Object.values(DOC_REQUEST_EXTRA_FIELDS)
+  .flat()
+  .reduce((map, def) => {
+    if (!(def.name in map)) map[def.name] = def.label;
+    return map;
+  }, Object.create(null));
+
+// Resolve a stored request_fields_json key to the same label the
+// resident saw on the submit form. Falls back to Title Case for any
+// key that isn't currently in DOC_REQUEST_EXTRA_FIELDS (e.g. a field
+// that was whitelisted in the past but removed since).
+function requestFieldLabel(key) {
+  if (key in REQUEST_FIELD_LABELS) return REQUEST_FIELD_LABELS[key];
+  return String(key)
+    .split('_')
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function computeAgeFromBirthdate(birthdate) {
+  if (!birthdate) return '';
+  const b = new Date(`${birthdate}T00:00:00`);
+  if (Number.isNaN(b.getTime())) return '';
+  const now = new Date();
+  let age = now.getFullYear() - b.getFullYear();
+  const m = now.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
+  return age >= 0 ? String(age) : '';
+}
+
+function renderExtraRequestFields() {
+  const typeEl = document.getElementById('reqDocType');
+  const wrap   = document.getElementById('reqExtraFields');
+  if (!typeEl || !wrap) return;
+  const defs = DOC_REQUEST_EXTRA_FIELDS[typeEl.value] || [];
+  if (!defs.length) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
+  wrap.style.display = 'grid';
+  const profile = window.RESIDENT_PROFILE || {};
+  wrap.innerHTML = defs.map(def => {
+    const id = `req-extra-${def.name}`;
+    let value = '';
+    if (def.prefill === 'age') value = computeAgeFromBirthdate(profile.birthdate);
+    if (def.prefill === 'civil_status') value = profile.civil_status || '';
+    const req = def.required ? ' required' : '';
+    let inner;
+    if (def.type === 'select') {
+      inner = `<select class="form-input" id="${id}" data-extra-field="${def.name}"${req}>
+        <option value="">— Select —</option>
+        ${def.options.map(o => `<option value="${escapeHtml(o)}"${value === o ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+      </select>`;
+    } else {
+      const min = def.min !== undefined ? ` min="${def.min}"` : '';
+      const max = def.max !== undefined ? ` max="${def.max}"` : '';
+      const ph  = def.placeholder ? ` placeholder="${escapeHtml(def.placeholder)}"` : '';
+      inner = `<input type="${def.type}" class="form-input" id="${id}" data-extra-field="${def.name}"
+        value="${escapeHtml(value)}"${min}${max}${ph}${req} />`;
+    }
+    return `<div class="field"><label>${escapeHtml(def.label)}</label>${inner}</div>`;
+  }).join('');
+}
+
+function collectExtraRequestFields() {
+  const out = {};
+  document.querySelectorAll('#reqExtraFields [data-extra-field]').forEach(el => {
+    const key = el.getAttribute('data-extra-field');
+    const val = (el.value || '').trim();
+    if (key && val !== '') out[key] = val;
+  });
+  return out;
+}
+
 function initRequestPricing() {
-  document.getElementById('reqDocType')?.addEventListener('change', updateRequestTotal);
+  document.getElementById('reqDocType')?.addEventListener('change', () => {
+    renderExtraRequestFields();
+    updateRequestTotal();
+  });
   document.getElementById('reqCopies')?.addEventListener('input', updateRequestTotal);
+  renderExtraRequestFields();
   updateRequestTotal();
 }
 
@@ -283,10 +379,14 @@ function viewRequest(id) {
   if (!req) return;
   const copies = Number(req.copies || 1);
   const copiesLabel = copies === 1 ? '1 copy' : `${copies} copies`;
+  const extraRows = Object.entries(req.requestFields || {})
+    .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .map(([k, v]) => [requestFieldLabel(k), String(v)]);
   const fields = [
     ['Reference Number', req.ref],
     ['Document Type', req.type],
     ['Purpose', req.purpose],
+    ...extraRows,
     ['Quantity', copiesLabel],
     ['Total Amount', pesoR(req.totalAmount)],
     ['Payment Status', req.paymentStatus || 'unpaid'],
@@ -453,6 +553,10 @@ function initMarkAllRead() {
 }
 
 function mapRequestRow(row) {
+  let requestFields = {};
+  try {
+    requestFields = row.request_fields_json ? JSON.parse(row.request_fields_json) : {};
+  } catch { requestFields = {}; }
   return {
     id: Number(row.id),
     ref: row.reference_no,
@@ -462,7 +566,8 @@ function mapRequestRow(row) {
     status: row.status,
     copies: Number(row.copies || 1),
     totalAmount: Number(row.total_amount || 0),
-    paymentStatus: row.payment_status || 'unpaid'
+    paymentStatus: row.payment_status || 'unpaid',
+    requestFields,
   };
 }
 
@@ -645,14 +750,25 @@ async function submitRequest(formEl, form) {
     showToast('Price Unavailable', 'This document type has no posted price. Choose another type or try again later.');
     return;
   }
+
+  // Enforce required extras client-side to give a clean error before the request.
+  const extras = collectExtraRequestFields();
+  const required = (DOC_REQUEST_EXTRA_FIELDS[type] || []).filter(d => d.required);
+  const missing = required.filter(d => !extras[d.name]);
+  if (missing.length) {
+    showToast('Missing Fields', `Please fill in: ${missing.map(d => d.label).join(', ')}.`);
+    return;
+  }
+
   try {
     await fetchJson(`${API_BASE}/requests/create.php`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ document_type: type, purpose, copies })
+      body: JSON.stringify({ document_type: type, purpose, copies, fields: extras })
     });
     form.style.display = 'none';
     formEl.reset();
+    renderExtraRequestFields();
     updateRequestTotal();
     await loadRequests();
     await refreshResidentView();

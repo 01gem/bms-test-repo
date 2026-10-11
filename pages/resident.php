@@ -228,6 +228,7 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
                 <input type="number" class="form-input" id="reqCopies" min="1" max="5" value="1" />
               </div>
             </div>
+            <div class="form-2col" id="reqExtraFields" style="margin-top:12px;"></div>
             <div class="card" id="reqPricingSummary" style="margin-top:12px;padding:14px 18px;background:var(--surface-2);border:1px solid var(--border)">
               <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text-2)">
                 <span>Unit price</span><span id="reqUnitPrice">₱0.00</span>
@@ -416,6 +417,12 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
     <div class="modal-box" id="requestModalBox"></div>
   </div>
 
+  <script>
+    window.RESIDENT_PROFILE = <?php echo json_encode([
+      'birthdate'    => $residentProfile['birthdate']    ?? null,
+      'civil_status' => $residentProfile['civil_status'] ?? null,
+    ], JSON_UNESCAPED_UNICODE); ?>;
+  </script>
   <script src="../js/resident.js?v=<?= filemtime(__DIR__ . '/../js/resident.js') ?>"></script>
 </body>
 </html>

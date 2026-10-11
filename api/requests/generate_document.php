@@ -77,7 +77,12 @@ $templateMap = [
   ],
 ];
 
-$reqStmt = $db->prepare('SELECT dr.id, dr.reference_no, dr.document_type, dr.purpose, dr.resident_id, dr.resident_name, r.fname, r.lname, r.address FROM document_requests dr LEFT JOIN residents r ON r.id = dr.resident_id WHERE dr.id = ? LIMIT 1');
+$reqStmt = $db->prepare('SELECT dr.id, dr.reference_no, dr.document_type, dr.purpose,
+    dr.request_fields_json, dr.resident_id, dr.resident_name,
+    r.fname, r.lname, r.address, r.birthdate, r.civil_status
+  FROM document_requests dr
+  LEFT JOIN residents r ON r.id = dr.resident_id
+  WHERE dr.id = ? LIMIT 1');
 if (!$reqStmt) json_error('Failed to prepare request lookup.', 500);
 $reqStmt->bind_param('i', $requestId);
 $requestRows = db_query_all($reqStmt);
@@ -134,6 +139,28 @@ if (($generatedFields['date_issued'] ?? '') === '') {
 }
 $generatedFields['official_name'] = $fixedOfficialName;
 $generatedFields['official_position'] = $fixedOfficialPosition;
+
+// Resident-supplied fields from the request form fill any placeholder the
+// official left blank. Explicit values typed in the modal still win.
+$storedFields = json_decode((string)($request['request_fields_json'] ?? ''), true);
+if (is_array($storedFields)) {
+  foreach ($storedFields as $k => $v) {
+    if (!isset($generatedFields[$k]) || $generatedFields[$k] === '') {
+      $generatedFields[$k] = is_scalar($v) ? (string)$v : '';
+    }
+  }
+}
+
+// Derive age from the resident's birthdate when neither the modal nor the
+// stored fields supplied one. Barangay Clearance needs this placeholder.
+if (($generatedFields['age'] ?? '') === '' && !empty($request['birthdate'])) {
+  try {
+    $birth = new DateTime((string)$request['birthdate']);
+    $generatedFields['age'] = (string)$birth->diff(new DateTime('now'))->y;
+  } catch (Throwable $e) {
+    // Leave blank; the placeholder resolves to empty in the DOCX.
+  }
+}
 
 $referenceNo = preg_replace('/[^A-Za-z0-9._-]/', '_', (string)($request['reference_no'] ?? ''));
 if ($referenceNo === null || $referenceNo === '') {

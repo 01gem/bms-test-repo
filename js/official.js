@@ -451,25 +451,27 @@ function renderDocumentGenerationFields(req) {
   if (!fieldsWrap) return;
   const keys = DOC_TEMPLATE_FIELDS[req.type] || [];
   const residentDefaults = getResidentDefaultsForRequest(req);
+  const stored = req.requestFields || {};
   const todayIso = new Date().toISOString().slice(0, 10);
   const purposeDefault = req.purpose || '';
 
   fieldsWrap.innerHTML = keys.map((key) => {
     let value = '';
-    if (key === 'full_name' || key === 'owner_name') value = residentDefaults.full_name;
-    if (key === 'address' || key === 'business_address') value = residentDefaults.address;
-    if (key === 'purpose') value = purposeDefault;
-    if (key === 'date_issued') value = todayIso;
+    // Resident-supplied value wins over resident-record defaults.
+    if (Object.prototype.hasOwnProperty.call(stored, key)) {
+      value = String(stored[key]);
+    } else {
+      if (key === 'full_name' || key === 'owner_name') value = residentDefaults.full_name;
+      if (key === 'address' || key === 'business_address') value = residentDefaults.address;
+      if (key === 'purpose') value = purposeDefault;
+      if (key === 'date_issued') value = todayIso;
+    }
     const isDate = key === 'date_issued';
     return `
       <div class="field" style="margin-top:8px;">
         <label>${prettifyFieldName(key)}</label>
-        <input
-          type="${isDate ? 'date' : 'text'}"
-          class="form-input"
-          data-doc-field="${key}"
-          value="${escapeAttribute(value)}"
-        />
+        <input type="${isDate ? 'date' : 'text'}" class="form-input"
+          data-doc-field="${key}" value="${escapeAttribute(value)}" />
       </div>
     `;
   }).join('');
@@ -1337,6 +1339,10 @@ function mapAuditRow(row) {
 }
 
 function mapRequestRow(row) {
+  let requestFields = {};
+  try {
+    requestFields = row.request_fields_json ? JSON.parse(row.request_fields_json) : {};
+  } catch { requestFields = {}; }
   return {
     id: Number(row.id),
     ref: row.reference_no,
@@ -1350,7 +1356,8 @@ function mapRequestRow(row) {
     totalAmount: Number(row.total_amount || 0),
     paymentStatus: row.payment_status || 'unpaid',
     generatedDocumentPath: row.generated_document_path || '',
-    dateCompleted: row.date_completed || row.date_processed || ''
+    dateCompleted: row.date_completed || row.date_processed || '',
+    requestFields,
   };
 }
 
@@ -3515,6 +3522,9 @@ function showRequestDetails(requestId) {
   const generatedUrl = canViewGenerated ? `../${request.generatedDocumentPath.replace(/^\.?\//, '')}` : '';
   const copies = Number(request.copies || 1);
   const copiesLabel = copies === 1 ? '1 copy' : `${copies} copies`;
+  const extraFieldsHtml = Object.entries(request.requestFields || {})
+    .map(([k, v]) => profileDetailField(prettifyFieldName(k), String(v)))
+    .join('');
 
   document.getElementById('actionModalBox')?.classList.add('detail-modal-box');
   showModal('Request Details', `
@@ -3523,6 +3533,7 @@ function showRequestDetails(requestId) {
       ${profileDetailField('Resident', request.resident)}
       ${profileDetailField('Document Type', request.type)}
       ${profileDetailField('Purpose', request.purpose)}
+      ${extraFieldsHtml}
       ${profileDetailField('Status', request.status)}
       ${profileDetailField('Quantity', copiesLabel)}
       ${profileDetailField('Total Amount', peso(request.totalAmount))}

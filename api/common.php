@@ -58,6 +58,32 @@ function official_full_name(array $row): string {
   return trim(($row['fname'] ?? '') . ' ' . ($row['lname'] ?? ''));
 }
 
+/**
+ * Normalize a Philippine mobile number to E.164 (+639XXXXXXXXX).
+ * Accepts +63, 63, 0, or bare 9-prefixed numbers, with optional
+ * spaces, dashes, dots, or parentheses. Returns null when the input
+ * cannot be resolved to a valid PH mobile number.
+ */
+function normalize_ph_phone(string $raw): ?string {
+  $digits = preg_replace('/[\s\-\(\)\.]/', '', trim($raw));
+  if ($digits === null || $digits === '') return null;
+  if (str_starts_with($digits, '+')) $digits = substr($digits, 1);
+  if (!ctype_digit($digits)) return null;
+
+  if (strlen($digits) === 12 && str_starts_with($digits, '63')) {
+    $rest = substr($digits, 2);
+  } elseif (strlen($digits) === 11 && str_starts_with($digits, '0')) {
+    $rest = substr($digits, 1);
+  } elseif (strlen($digits) === 10 && str_starts_with($digits, '9')) {
+    $rest = $digits;
+  } else {
+    return null;
+  }
+
+  if (strlen($rest) !== 10 || $rest[0] !== '9') return null;
+  return '+63' . $rest;
+}
+
 function db_query_all(mysqli_stmt $stmt): array {
   if (!$stmt->execute()) {
     json_db_error('Database query failed', $stmt->error);

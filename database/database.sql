@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS `document_requests` (
   `resident_name` varchar(100) NOT NULL,
   `document_type` varchar(100) NOT NULL,
   `purpose` varchar(150) NOT NULL,
+  `request_fields_json` JSON NULL,
   `copies` int(10) NOT NULL DEFAULT 1,
   `total_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
   `payment_status` enum('unpaid','paid','waived') NOT NULL DEFAULT 'unpaid',
@@ -177,6 +178,6 @@ CREATE TABLE IF NOT EXISTS `local_services` (
 -- CHANGE BEFORE PRODUCTION. This is a test-environment default.
 INSERT INTO `barangay_officials` (`id`, `fname`, `lname`, `username`, `role`, `address`,
  `contact`, `password`, `position`, `status`, `created_at`) VALUES (NULL, 'Gem', 'Lander',
-  'gem', 'admin', 'Purok 1, Barangay Sampaguita', '09999999999', '$2y$10$tdR115sHmFzrezadn3Pxfe9PLZVzaz7FS4Vvh7dAN4JPPfIjNtlm.', 'Barangay Captain',
+  'gem', 'admin', 'Purok 1, Barangay Sampaguita', '+639999999999', '$2y$10$tdR115sHmFzrezadn3Pxfe9PLZVzaz7FS4Vvh7dAN4JPPfIjNtlm.', 'Barangay Captain',
    'active', CURRENT_TIMESTAMP
 );

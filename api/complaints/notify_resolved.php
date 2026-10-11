@@ -109,6 +109,7 @@ if ($residentId > 0) {
     $sms = ['status' => 'skipped', 'reason' => 'No SMS was sent because the linked resident record was not found.'];
   } else {
     $contact = trim((string)($residentRows[0]['contact'] ?? ''));
+    $contact = normalize_ph_phone($contact) ?? $contact;
     if ($contact === '') {
       $sms = ['status' => 'skipped', 'reason' => 'No SMS was sent because the linked resident has no contact number.'];
     } elseif (!preg_match('/^[+0-9][0-9\s-]{6,}$/', $contact)) {

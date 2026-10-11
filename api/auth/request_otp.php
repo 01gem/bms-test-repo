@@ -32,6 +32,7 @@ if (count($rows) === 0 || trim((string)($rows[0]['contact'] ?? '')) === '') {
 
 $accountId = (int)$rows[0]['id'];
 $contact = trim((string)$rows[0]['contact']);
+$contact = normalize_ph_phone($contact) ?? $contact;
 $rateStmt = $db->prepare('SELECT id FROM otp_codes WHERE account_type = ? AND account_id = ? AND used = 0 AND expires_at > NOW() AND created_at >= DATE_SUB(NOW(), INTERVAL 60 SECOND) ORDER BY created_at DESC LIMIT 1');
 if (!$rateStmt) json_error('Unable to process password recovery.', 500);
 $rateStmt->bind_param('si', $accountType, $accountId);
