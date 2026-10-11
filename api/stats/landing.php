@@ -21,7 +21,7 @@ $serviceRow = $serviceResult->fetch_assoc();
 // Placeholder values for the demo build. Replace with real computations
 // once enough request history exists.
 $requestFulfillmentRate = 94;   // percent
-$avgResponseTimeMinutes = 45;   // minutes
+$avgResponseTimeMinutes = 5;   // minutes
 
 json_success([
   'registered_residents' => (int)$residentRow['total'],
