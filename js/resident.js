@@ -543,6 +543,107 @@ function renderAttachmentsHtml(attachments) {
   }).join('') + '</div>';
 }
 
+// Keep in sync with the identical complaint comment helpers in js/official.js.
+function complaintCommentsSectionHtml() {
+  return `<section data-complaint-comments style="margin:16px 0">
+    <h4 style="margin:0 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Comments</h4>
+    <div data-comment-list aria-live="polite" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;padding:0 12px">Loading comments…</div>
+    <form data-comment-form style="margin-top:10px">
+      <label style="display:block;font-size:12px;color:var(--text-2)">Add a comment (up to 2,000 characters)
+        <textarea name="body" rows="3" required style="display:block;box-sizing:border-box;width:100%;margin:6px 0;padding:8px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text)"></textarea>
+      </label>
+      <button type="submit" disabled style="padding:8px 16px;background:var(--blue-mid);color:white;border:none;border-radius:7px;cursor:pointer">Post comment</button>
+      <p data-comment-status role="status" style="font-size:12px;color:var(--text-2);margin:8px 0 0"></p>
+    </form>
+  </section>`;
+}
+
+async function loadComplaintComments(complaintId) {
+  const data = await fetchJson(`${API_BASE}/complaints/list_comments.php?complaint_id=${encodeURIComponent(complaintId)}`);
+  return data.comments || [];
+}
+
+function renderComplaintCommentsHtml(comments) {
+  if (!comments.length) return '<p style="color:var(--text-3);font-size:12.5px">No comments yet.</p>';
+  return comments.map(comment => {
+    const name = escapeHtml(comment.actor_name || (comment.actor_type === 'official' ? 'Official' : 'Resident'));
+    const role = comment.actor_type === 'official' ? 'Official' : 'Resident';
+    const when = escapeHtml(String(comment.created_at || ''));
+    const body = escapeHtml(String(comment.body || ''));
+    return `<article style="padding:10px 0;border-bottom:1px solid var(--border);overflow-wrap:anywhere">
+      <div style="font-size:12px;font-weight:600;color:var(--text)">${name} · ${role}</div>
+      <div style="font-size:11px;color:var(--text-3)">${when}</div>
+      <div style="white-space:pre-wrap;font-size:13px;line-height:1.5;color:var(--text-2);margin-top:4px">${body}</div>
+    </article>`;
+  }).join('');
+}
+
+async function initComplaintComments(root, complaintId) {
+  if (!root) return;
+  const list = root.querySelector('[data-comment-list]');
+  const form = root.querySelector('[data-comment-form]');
+  const textarea = form.elements.namedItem('body');
+  const button = form.querySelector('button[type="submit"]');
+  const status = root.querySelector('[data-comment-status]');
+  let busy = true;
+  const refresh = async () => {
+    const comments = await loadComplaintComments(complaintId);
+    if (root.isConnected) list.innerHTML = renderComplaintCommentsHtml(comments);
+  };
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (busy || !root.isConnected) return;
+    const body = textarea.value.trim();
+    if (!body || Array.from(body).length > 2000) {
+      status.textContent = 'Enter a comment of 1–2,000 characters.';
+      return;
+    }
+    busy = true;
+    button.disabled = true;
+    textarea.disabled = true;
+    status.textContent = 'Posting…';
+    try {
+      await fetchJson(`${API_BASE}/complaints/add_comment.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ complaint_id: complaintId, body })
+      });
+    } catch (error) {
+      if (root.isConnected) {
+        status.textContent = error.message || 'Could not post comment.';
+        busy = false;
+        button.disabled = false;
+        textarea.disabled = false;
+      }
+      return;
+    }
+    if (!root.isConnected) return;
+    textarea.value = '';
+    status.textContent = 'Comment posted.';
+    try {
+      await refresh();
+    } catch {
+      if (root.isConnected) status.textContent = 'Comment saved. Reopen this complaint to refresh the discussion.';
+    } finally {
+      if (root.isConnected) {
+        busy = false;
+        button.disabled = false;
+        textarea.disabled = false;
+      }
+    }
+  });
+  try {
+    await refresh();
+  } catch {
+    if (root.isConnected) list.textContent = 'Comments unavailable. Reopen this complaint to retry.';
+  } finally {
+    if (root.isConnected) {
+      busy = false;
+      button.disabled = false;
+    }
+  }
+}
+
 function viewComplaint(id) {
   const c = COMPLAINTS.find(x => Number(x.id) === Number(id));
   if (!c) return;
@@ -578,10 +679,12 @@ function viewComplaint(id) {
     </dl>
     <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Timeline</h4>
     <div id="complaintTimeline" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;padding:0 12px"></div>
+    ${complaintCommentsSectionHtml()}
     <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Photos</h4>
     <div id="complaintAttachments" style="border:1px solid var(--border);border-radius:7px;padding:12px"></div>
     <button type="button" onclick="closeRequestModal()" style="padding:9px 24px;background:var(--blue-mid);color:white;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">Close</button>
   `;
+  initComplaintComments(box.querySelector('[data-complaint-comments]'), c.id);
   document.getElementById('requestModal').classList.add('show');
   loadComplaintTimeline(c.id)
     .then(updates => {
