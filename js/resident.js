@@ -15,6 +15,25 @@ const ACTIVE_SECTION_KEY = 'resident_active_section';
 let DOC_PRICES = {};
 function pesoR(n) { return '₱' + Number(n || 0).toFixed(2); }
 
+// ── RETRY STATE ───────────────────────────
+// Keyed by the form element. One entry per active retry session, scoped to the
+// lifetime of the form. WeakMap so a detached form (e.g. a modal-based composer
+// in a later phase) doesn't leak its state. Generic — reusable by any future
+// resource that has a "parent created, children failed" split.
+const RETRY_STATES = new WeakMap();
+
+function setRetryState(formEl, state) {
+  RETRY_STATES.set(formEl, state);
+}
+
+function getRetryState(formEl) {
+  return RETRY_STATES.get(formEl) || null;
+}
+
+function clearRetryState(formEl) {
+  RETRY_STATES.delete(formEl);
+}
+
 async function loadDocumentPrices() {
   try {
     const data = await fetchJson(`${API_BASE}/document_prices/list.php`);
@@ -506,6 +525,24 @@ function renderTimelineHtml(updates) {
   }).join('') + '</ol>';
 }
 
+async function loadComplaintAttachments(complaintId) {
+  const data = await fetchJson(`${API_BASE}/complaints/list_attachments.php?complaint_id=${encodeURIComponent(complaintId)}`);
+  return data.attachments || [];
+}
+
+function renderAttachmentsHtml(attachments) {
+  if (!attachments.length) {
+    return '<p style="color:var(--text-3);font-size:12.5px">No photos attached.</p>';
+  }
+  return '<div style="display:flex;gap:8px;flex-wrap:wrap">' + attachments.map(a => {
+    const href = escapeHtml(a.url);
+    return `<a href="${href}" target="_blank" rel="noopener" title="Open full size">
+      <img src="${href}" alt="Complaint photo"
+        style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border)" />
+    </a>`;
+  }).join('') + '</div>';
+}
+
 function viewComplaint(id) {
   const c = COMPLAINTS.find(x => Number(x.id) === Number(id));
   if (!c) return;
@@ -541,6 +578,8 @@ function viewComplaint(id) {
     </dl>
     <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Timeline</h4>
     <div id="complaintTimeline" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;padding:0 12px"></div>
+    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Photos</h4>
+    <div id="complaintAttachments" style="border:1px solid var(--border);border-radius:7px;padding:12px"></div>
     <button type="button" onclick="closeRequestModal()" style="padding:9px 24px;background:var(--blue-mid);color:white;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">Close</button>
   `;
   document.getElementById('requestModal').classList.add('show');
@@ -552,6 +591,15 @@ function viewComplaint(id) {
     .catch(() => {
       const el = document.getElementById('complaintTimeline');
       if (el) el.textContent = 'Timeline unavailable.';
+    });
+  loadComplaintAttachments(c.id)
+    .then(atts => {
+      const el = document.getElementById('complaintAttachments');
+      if (el) el.innerHTML = renderAttachmentsHtml(atts);
+    })
+    .catch(() => {
+      const el = document.getElementById('complaintAttachments');
+      if (el) el.textContent = 'Photos unavailable.';
     });
 }
 
@@ -594,11 +642,75 @@ function initComplaintFormToggle() {
   const formEl   = document.getElementById('complaintFormEl');
 
   openBtn?.addEventListener('click',   () => { form.style.display = 'block'; form.scrollIntoView({ behavior:'smooth' }); });
-  closeBtn?.addEventListener('click',  () => { form.style.display = 'none'; });
-  cancelBtn?.addEventListener('click', () => { form.style.display = 'none'; });
+  closeBtn?.addEventListener('click',  () => {
+    if (getRetryState(formEl)) { skipPendingComplaintUploads(formEl); return; }
+    form.style.display = 'none';
+  });
+  cancelBtn?.addEventListener('click', () => {
+    if (getRetryState(formEl)) { skipPendingComplaintUploads(formEl); return; }
+    form.style.display = 'none';
+  });
   formEl?.addEventListener('submit', e => {
     e.preventDefault();
     submitComplaint(formEl, form);
+  });
+  document.getElementById('complaintRetryBtn')?.addEventListener('click', () => retryPendingComplaintUploads(formEl));
+  document.getElementById('complaintSkipBtn')?.addEventListener('click', () => skipPendingComplaintUploads(formEl));
+}
+
+function initComplaintPhotoInput() {
+  const input = document.getElementById('reqPhotos');
+  const preview = document.getElementById('reqPhotosPreview');
+  const error = document.getElementById('reqPhotosError');
+  if (!input || !preview) return;
+
+  const MAX_FILES = 3;
+  const MAX_BYTES = 5 * 1024 * 1024;
+  const ALLOWED = ['image/jpeg', 'image/png'];
+
+  const showError = (msg) => {
+    if (!error) return;
+    error.textContent = msg;
+    error.style.display = msg ? 'block' : 'none';
+  };
+
+  input.addEventListener('change', () => {
+    showError('');
+    preview.innerHTML = '';
+    const files = Array.from(input.files || []);
+    if (files.length > MAX_FILES) {
+      showError(`Maximum ${MAX_FILES} photos per complaint.`);
+      input.value = '';
+      return;
+    }
+    for (const file of files) {
+      if (!ALLOWED.includes(file.type)) {
+        showError(`Unsupported file: ${file.name}. Use JPEG or PNG.`);
+        input.value = '';
+        return;
+      }
+      if (file.size > MAX_BYTES) {
+        showError(`Photo too large: ${file.name}. Max 5MB.`);
+        input.value = '';
+        return;
+      }
+    }
+    files.forEach(file => {
+      const url = URL.createObjectURL(file);
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = file.name;
+      img.style.cssText = 'width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--border);';
+      img.addEventListener('load', () => URL.revokeObjectURL(url));
+      preview.appendChild(img);
+    });
+  });
+
+  // Reset preview whenever the form is reset (close form, successful submit).
+  const formEl = document.getElementById('complaintFormEl');
+  formEl?.addEventListener('reset', () => {
+    preview.innerHTML = '';
+    showError('');
   });
 }
 
@@ -911,20 +1023,156 @@ async function submitComplaint(formEl, form) {
     return;
   }
 
+  const fileInput = document.getElementById('reqPhotos');
+  const files = fileInput ? Array.from(fileInput.files || []) : [];
+  const submitBtn = formEl.querySelector('button[type="submit"]');
+  const originalBtnText = submitBtn ? submitBtn.textContent : '';
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting...'; }
+
+  let complaintId = 0;
+  let created;
   try {
-    await fetchJson(`${API_BASE}/complaints/create.php`, {
+    created = await fetchJson(`${API_BASE}/complaints/create.php`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ category, location_text: location, description, severity })
     });
+    complaintId = Number(created.id) || 0;
+  } catch (err) {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = originalBtnText; }
+    showToast('Submit Failed', err.message);
+    return;
+  }
+
+  // Complaint is now committed. Attachments are best-effort; failures route to retry mode.
+  let uploaded = 0;
+  const failedFiles = [];
+  for (let i = 0; i < files.length; i++) {
+    if (submitBtn) submitBtn.textContent = `Uploading ${i + 1}/${files.length}...`;
+    try {
+      const body = new FormData();
+      body.append('complaint_id', String(complaintId));
+      body.append('photo', files[i]);
+      const res = await fetch(`${API_BASE}/complaints/upload_attachment.php`, { method: 'POST', body });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data || !data.success) throw new Error((data && data.message) || `HTTP ${res.status}`);
+      uploaded++;
+    } catch (err) {
+      failedFiles.push(files[i]);
+    }
+  }
+
+  if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = originalBtnText; }
+  await loadComplaints();
+  await refreshResidentView();
+
+  if (failedFiles.length === 0) {
     form.style.display = 'none';
     formEl.reset();
+    formEl.querySelectorAll('input[type="file"]').forEach(el => { el.value = ''; });
+    if (files.length === 0) {
+      showToast('Complaint Submitted!', 'Your complaint has been submitted for review.');
+    } else {
+      showToast('Complaint Submitted!', `${uploaded} photo${uploaded === 1 ? '' : 's'} attached.`);
+    }
+  } else {
+    enterComplaintRetryMode(formEl, form, complaintId, String(created.reference_no || ''), failedFiles);
+  }
+}
+
+function enterComplaintRetryMode(formEl, form, complaintId, referenceNo, pendingFiles) {
+  // Snapshot which controls were enabled before we lock everything, so teardown
+  // restores the original state rather than blanket-enabling every node.
+  const originallyEnabled = new Set(
+    Array.from(formEl.querySelectorAll('input, select, textarea'))
+      .filter(el => !el.disabled)
+  );
+  setRetryState(formEl, {
+    formEl,
+    form,
+    complaintId,
+    referenceNo,
+    pendingFiles,
+    originallyEnabled,
+  });
+  // Complaint is filed — lock every field so resubmission can't duplicate it.
+  formEl.querySelectorAll('input, select, textarea').forEach(el => { el.disabled = true; });
+  const actions = formEl.querySelector('.form-actions');
+  if (actions) actions.style.display = 'none';
+  const banner = document.getElementById('complaintRetryBanner');
+  const message = document.getElementById('complaintRetryMessage');
+  const retryBtn = document.getElementById('complaintRetryBtn');
+  if (!banner || !message || !retryBtn) return;
+  message.textContent = `Complaint ${referenceNo} was filed, but ${pendingFiles.length} photo${pendingFiles.length === 1 ? '' : 's'} failed to upload.`;
+  retryBtn.textContent = `Retry Upload (${pendingFiles.length})`;
+  retryBtn.disabled = false;
+  banner.style.display = '';
+}
+
+async function retryPendingComplaintUploads(formEl) {
+  const state = getRetryState(formEl);
+  if (!state) return;
+  const { complaintId, referenceNo } = state;
+  const pendingFiles = state.pendingFiles;
+  const retryBtn = document.getElementById('complaintRetryBtn');
+  if (!retryBtn) return;
+  retryBtn.disabled = true;
+  const stillFailed = [];
+  for (let i = 0; i < pendingFiles.length; i++) {
+    retryBtn.textContent = `Uploading ${i + 1}/${pendingFiles.length}...`;
+    try {
+      const body = new FormData();
+      body.append('complaint_id', String(complaintId));
+      body.append('photo', pendingFiles[i]);
+      const res = await fetch(`${API_BASE}/complaints/upload_attachment.php`, { method: 'POST', body });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data || !data.success) throw new Error((data && data.message) || `HTTP ${res.status}`);
+    } catch (err) {
+      stillFailed.push(pendingFiles[i]);
+    }
+  }
+  if (stillFailed.length === 0) {
+    closeComplaintRetryMode(formEl);
     await loadComplaints();
     await refreshResidentView();
-    showToast('Complaint Submitted!', 'Your complaint has been submitted for review.');
-  } catch (err) {
-    showToast('Submit Failed', err.message);
+    showToast('Photos Uploaded', `All remaining photos attached to ${referenceNo}.`);
+  } else {
+    state.pendingFiles = stillFailed;
+    retryBtn.disabled = false;
+    retryBtn.textContent = `Retry Upload (${stillFailed.length})`;
+    const message = document.getElementById('complaintRetryMessage');
+    if (message) {
+      message.textContent = `${stillFailed.length} photo${stillFailed.length === 1 ? '' : 's'} still failing to upload.`;
+    }
   }
+}
+
+function closeComplaintRetryMode(formEl) {
+  const banner = document.getElementById('complaintRetryBanner');
+  if (banner) banner.style.display = 'none';
+  const state = getRetryState(formEl);
+  if (!state) return;
+  // Restore the exact enabled/disabled state from before the lock. Any
+  // conditionally-disabled field (present or future) stays that way.
+  state.formEl.querySelectorAll('input, select, textarea').forEach(el => {
+    el.disabled = !state.originallyEnabled.has(el);
+  });
+  const actions = state.formEl.querySelector('.form-actions');
+  if (actions) actions.style.display = '';
+  state.form.style.display = 'none';
+  state.formEl.reset();
+  // form.reset() is unreliable for FileList across engines — force-clear.
+  state.formEl.querySelectorAll('input[type="file"]').forEach(el => { el.value = ''; });
+  clearRetryState(formEl);
+}
+
+function skipPendingComplaintUploads(formEl) {
+  const state = getRetryState(formEl);
+  if (!state) return;
+  const referenceNo = state.referenceNo;
+  const remaining = state.pendingFiles.length;
+  closeComplaintRetryMode(formEl);
+  showToast('Complaint Filed', `${referenceNo} was filed without ${remaining} photo${remaining === 1 ? '' : 's'}.`);
 }
 
 // ── TOAST ─────────────────────────────────
@@ -1103,6 +1351,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initRequestsTable();
   initReqFormToggle();
   initComplaintFormToggle();
+  initComplaintPhotoInput();
   initNotifDrawer();
   initMarkAllRead();
   initProfilePhotoUpload();

@@ -76,5 +76,9 @@ $smsBody = "Hi {$residentFirstName}, your complaint {$ref} was received by Brgy.
          . "We'll update you on any changes.";
 notify_resident($residentId, 'complaint_filed', $smsBody, 'complaints_enabled');
 
-json_success(['reference_no' => $ref, 'message' => 'Complaint submitted successfully.']);
+json_success([
+    'id'           => $complaintId,
+    'reference_no' => $ref,
+    'message'      => 'Complaint submitted successfully.',
+]);
 ?>

@@ -46,4 +46,6 @@ profile_img/b_official/*
 profile_img/residents/*
 !profile_img/residents/README.txt
 
+complaint_attachments/
+
 source-code.txt

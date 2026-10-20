@@ -1322,6 +1322,26 @@ function renderTimelineHtml(updates) {
   }).join('') + '</ol>';
 }
 
+// Keep in sync with the identical loadComplaintAttachments() / renderAttachmentsHtml()
+// in js/resident.js.
+async function loadComplaintAttachments(complaintId) {
+  const data = await fetchJson(`${API_BASE}/complaints/list_attachments.php?complaint_id=${encodeURIComponent(complaintId)}`);
+  return data.attachments || [];
+}
+
+function renderAttachmentsHtml(attachments) {
+  if (!attachments.length) {
+    return '<p style="color:var(--text-3);font-size:12.5px">No photos attached.</p>';
+  }
+  return '<div style="display:flex;gap:8px;flex-wrap:wrap">' + attachments.map(a => {
+    const href = escapeHtml(a.url);
+    return `<a href="${href}" target="_blank" rel="noopener" title="Open full size">
+      <img src="${href}" alt="Complaint photo"
+        style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border)" />
+    </a>`;
+  }).join('') + '</div>';
+}
+
 function viewComplaint(id) {
   const c = COMPLAINTS_ADMIN.find(x => Number(x.id) === Number(id));
   if (!c) return;
@@ -1358,6 +1378,8 @@ function viewComplaint(id) {
     <p style="font-size:12px;color:var(--text-3);margin:0 0 16px">Status, severity, and notes can be updated using the controls on the complaint card. Close this view to make changes.</p>
     <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Timeline</h4>
     <div id="complaintTimeline" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;padding:0 12px"></div>
+    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Photos</h4>
+    <div id="complaintAttachments" style="border:1px solid var(--border);border-radius:7px;padding:12px"></div>
     <button type="button" onclick="closeModal()" style="padding:9px 24px;background:var(--blue-mid);color:white;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">Close</button>
   `;
   document.getElementById('actionModal').classList.add('show');
@@ -1369,6 +1391,15 @@ function viewComplaint(id) {
     .catch(() => {
       const el = document.getElementById('complaintTimeline');
       if (el) el.textContent = 'Timeline unavailable.';
+    });
+  loadComplaintAttachments(c.id)
+    .then(atts => {
+      const el = document.getElementById('complaintAttachments');
+      if (el) el.innerHTML = renderAttachmentsHtml(atts);
+    })
+    .catch(() => {
+      const el = document.getElementById('complaintAttachments');
+      if (el) el.textContent = 'Photos unavailable.';
     });
 }
 

@@ -326,6 +326,24 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
               <label>Description</label>
               <textarea class="form-input" id="reqDescription" rows="4" placeholder="Describe the issue in detail..." required></textarea>
             </div>
+            <div class="field" style="margin-top:12px;">
+              <label>Photos <span class="opt-label">(optional, up to 3, JPEG or PNG, max 5MB each)</span></label>
+              <input type="file" id="reqPhotos" name="photos[]" class="form-input" accept="image/jpeg,image/png" multiple />
+              <div id="reqPhotosPreview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>
+              <small id="reqPhotosError" style="color:var(--danger);font-size:11.5px;display:none"></small>
+            </div>
+            <div id="complaintRetryBanner" style="display:none; padding:12px 14px; background:#FEF2F2; border:1px solid #FCA5A5; border-radius:8px; margin-bottom:12px; color:#B91C1C; font-size:13px;">
+              <div style="display:flex; gap:10px; align-items:flex-start;">
+                <i class="fa-solid fa-circle-exclamation" style="margin-top:2px;"></i>
+                <div style="flex:1;">
+                  <div id="complaintRetryMessage"></div>
+                  <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+                    <button type="button" class="btn-submit-form" id="complaintRetryBtn">Retry Upload</button>
+                    <button type="button" class="btn-cancel-form" id="complaintSkipBtn">Skip and Close</button>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div class="form-actions">
               <button type="submit" class="btn-submit-form">Submit Complaint</button>
               <button type="button" class="btn-cancel-form" id="cancelComplaintForm">Cancel</button>
