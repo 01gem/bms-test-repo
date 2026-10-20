@@ -1261,9 +1261,11 @@ function renderComplaintsAdmin(data) {
         <span class="status-badge status-${c.status}">${c.status}</span>
       </div>
       <div class="ca-meta">
-        <span><i class="fa-regular fa-calendar"></i> Filed: ${c.date}</span>
-        ${c.note ? `<span><i class="fa-solid fa-comment"></i> ${c.note}</span>` : ''}
+        <span><i class="fa-regular fa-calendar"></i> Filed: ${escapeAttribute(c.date)}</span>
+        ${severityChip(c.severity)}
+        ${c.note ? `<span><i class="fa-solid fa-comment"></i> ${escapeAttribute(c.note)}</span>` : ''}
       </div>
+      ${c.description ? `<div style="margin:8px 0 12px;font-size:12.5px;color:var(--text-2);line-height:1.5">${escapeAttribute(c.description.length > 160 ? c.description.slice(0, 160).trimEnd() + '…' : c.description)}</div>` : ''}
       <div class="ca-actions">
         <label>Update:</label>
         <select class="ca-status-select" id="compStatus-${c.id}">
@@ -1279,11 +1281,62 @@ function renderComplaintsAdmin(data) {
         </select>
         <input type="text" class="ca-note-input" id="compNote-${c.id}" placeholder="Add official note…" value="${c.note}" />
         <button class="btn-action resolve" onclick="updateComplaint(${c.id})">Save</button>
-        <button class="btn-action view" onclick="document.getElementById('actionModalBox').classList.remove('detail-modal-box'); showModal('Complaint Detail','${c.ref} — ${c.cat} — Filed by ${c.filer}')">View</button>
+        <button class="btn-action view" onclick="viewComplaint(${c.id})">View</button>
       </div>
     </div>
   `).join('');
 }
+
+function severityChip(severity) {
+  const map = {
+    low:      { bg: '#DCFCE7', color: '#15803D', label: 'Low' },
+    medium:   { bg: '#FEF9C3', color: '#A16207', label: 'Medium' },
+    high:     { bg: '#FFEDD5', color: '#C2410C', label: 'High' },
+    critical: { bg: '#FEE2E2', color: '#B91C1C', label: 'Critical' }
+  };
+  const s = map[String(severity).toLowerCase()] || map.medium;
+  return `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${s.bg};color:${s.color}">${s.label}</span>`;
+}
+
+function viewComplaint(id) {
+  const c = COMPLAINTS_ADMIN.find(x => Number(x.id) === Number(id));
+  if (!c) return;
+
+  const box = document.getElementById('actionModalBox');
+  if (!box) return;
+  box.classList.add('detail-modal-box');
+
+  const descriptionHtml = c.description
+    ? escapeHtml(c.description).replace(/\r?\n/g, '<br>')
+    : '<span style="color:var(--text-3)">No description provided.</span>';
+
+  box.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+      <h3 style="font-size:1.3rem;font-weight:600;color:var(--text)">Complaint ${escapeHtml(c.ref)}</h3>
+      <button type="button" onclick="closeModal()" style="background:none;border:none;font-size:18px;color:var(--text-3);cursor:pointer"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px 14px;margin-bottom:16px">
+      ${profileDetailField('Filed By', c.filer)}
+      ${profileDetailField('Category', c.cat)}
+      ${profileDetailField('Location', c.loc)}
+      ${profileDetailField('Date Filed', c.date)}
+      ${profileDetailField('Status', c.status)}
+      <div class="detail-field"><dt>Severity</dt><dd>${severityChip(c.severity)}</dd></div>
+    </div>
+    <div style="margin-bottom:16px;padding:12px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px">
+      <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Description</div>
+      <div style="font-size:13.5px;color:var(--text);line-height:1.6">${descriptionHtml}</div>
+    </div>
+    ${c.note ? `<div style="margin-bottom:16px;padding:10px 14px;background:#EFF6FF;border:1px solid #93C5FD;border-radius:8px">
+      <div style="font-size:11px;color:var(--blue);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Official Note</div>
+      <div style="font-size:13px;color:var(--text-2);line-height:1.5">${escapeHtml(c.note)}</div>
+    </div>` : ''}
+    <p style="font-size:12px;color:var(--text-3);margin:0 0 16px">Status, severity, and notes can be updated using the controls on the complaint card. Close this view to make changes.</p>
+    <button type="button" onclick="closeModal()" style="padding:9px 24px;background:var(--blue-mid);color:white;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">Close</button>
+  `;
+  document.getElementById('actionModal').classList.add('show');
+}
+
 async function updateComplaint(id) {
   const c = COMPLAINTS_ADMIN.find(x => Number(x.id) === Number(id));
   if (!c) return;
@@ -1402,8 +1455,9 @@ function mapComplaintRow(row) {
     ref: row.reference_no,
     filer: row.resident_name,
     cat: row.category,
-    severity: row.severity || 'medium',
+    severity: (row.severity || 'medium').toLowerCase(),
     loc: row.location_text,
+    description: row.description || '',
     date: row.date_filed,
     status: row.status,
     note: row.official_note || ''

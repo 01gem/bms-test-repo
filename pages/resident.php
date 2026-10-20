@@ -296,7 +296,7 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
             <button class="close-card-btn" id="closeComplaintForm"><i class="fa-solid fa-xmark"></i></button>
           </div>
           <form id="complaintFormEl">
-            <div class="form-2col">
+            <div class="form-3col">
               <div class="field">
                 <label>Type of Concern</label>
                 <select class="form-input" id="reqCategory" required>
@@ -311,6 +311,15 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
               <div class="field">
                 <label>Specific Location</label>
                 <input type="text" class="form-input" id="reqLocation" placeholder="e.g. Corner Mabini & Rizal" required />
+              </div>
+              <div class="field">
+                <label>Severity</label>
+                <select class="form-input" id="reqSeverity" required>
+                  <option value="low">Low</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical (immediate danger to life or property)</option>
+                </select>
               </div>
             </div>
             <div class="field" style="margin-top:12px;">

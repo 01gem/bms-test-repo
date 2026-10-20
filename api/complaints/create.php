@@ -23,6 +23,11 @@ $input = read_json_input();
 $category = trim((string)($input['category'] ?? ''));
 $location = trim((string)($input['location_text'] ?? ''));
 $description = trim((string)($input['description'] ?? ''));
+$severity = strtolower(trim((string)($input['severity'] ?? 'medium')));
+$allowedSeverity = ['low', 'medium', 'high', 'critical'];
+if (!in_array($severity, $allowedSeverity, true)) {
+  json_error('Invalid severity. Allowed values are: low, medium, high, critical.', 422);
+}
 if ($category === '' || $location === '' || $description === '') {
   json_error('Category, location, and description are required.');
 }
@@ -38,9 +43,13 @@ $dateFiled = date('M d, Y');
 $status = 'open';
 $note = 'Received. Awaiting assignment.';
 
-$stmt = $db->prepare("INSERT INTO complaints (resident_id, reference_no, resident_name, category, location_text, description, date_filed, status, official_note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+$stmt = $db->prepare("INSERT INTO complaints
+  (resident_id, reference_no, resident_name, category, severity, location_text, description, date_filed, status, official_note)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 if (!$stmt) json_error('Failed to prepare complaint insert.', 500);
-$stmt->bind_param('issssssss', $residentId, $ref, $residentName, $category, $location, $description, $dateFiled, $status, $note);
+$stmt->bind_param('isssssssss',
+  $residentId, $ref, $residentName, $category, $severity,
+  $location, $description, $dateFiled, $status, $note);
 if (!$stmt->execute()) {
   json_db_error('Failed to submit complaint', $stmt->error);
 }

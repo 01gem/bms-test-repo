@@ -471,6 +471,55 @@ function initReqFormToggle() {
 }
 
 // ── COMPLAINTS LIST ───────────────────────
+function severityChip(severity) {
+  const map = {
+    low:      { bg: '#DCFCE7', color: '#15803D', label: 'Low' },
+    medium:   { bg: '#FEF9C3', color: '#A16207', label: 'Medium' },
+    high:     { bg: '#FFEDD5', color: '#C2410C', label: 'High' },
+    critical: { bg: '#FEE2E2', color: '#B91C1C', label: 'Critical' }
+  };
+  const s = map[String(severity).toLowerCase()] || map.medium;
+  return `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${s.bg};color:${s.color}">${s.label}</span>`;
+}
+
+function viewComplaint(id) {
+  const c = COMPLAINTS.find(x => Number(x.id) === Number(id));
+  if (!c) return;
+  const box = document.getElementById('requestModalBox');
+  if (!box) return;
+
+  const rows = [
+    ['Reference Number', c.ref],
+    ['Category', c.cat],
+    ['Severity', c.severity, 'severity'],
+    ['Location', c.loc],
+    ['Description', c.description, 'multiline'],
+    ['Status', c.status],
+    ['Official Note', c.note],
+    ['Date Filed', c.date]
+  ];
+
+  box.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+      <h3 style="font-size:1.2rem;font-weight:600;color:var(--text)">Complaint Details</h3>
+      <button type="button" onclick="closeRequestModal()" style="background:none;border:none;font-size:18px;color:var(--text-3);cursor:pointer"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <dl style="display:grid;gap:8px;margin:0 0 20px">
+      ${rows.map(([label, value, mode]) => {
+        const safe = mode === 'multiline'
+          ? escapeHtml(value || 'Not provided').replace(/\r?\n/g, '<br>')
+          : (mode === 'severity' ? severityChip(value) : escapeHtml(value ?? 'Not provided'));
+        return `<div style="display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:7px">
+          <dt style="color:var(--text-3);font-size:11px;text-transform:uppercase;letter-spacing:.04em">${escapeHtml(label)}</dt>
+          <dd style="margin:0;color:var(--text);font-size:13px;font-weight:600;overflow-wrap:anywhere">${safe}</dd>
+        </div>`;
+      }).join('')}
+    </dl>
+    <button type="button" onclick="closeRequestModal()" style="padding:9px 24px;background:var(--blue-mid);color:white;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">Close</button>
+  `;
+  document.getElementById('requestModal').classList.add('show');
+}
+
 function renderComplaintsList() {
   const el = document.getElementById('complaintsList');
   if (!el) return;
@@ -481,15 +530,22 @@ function renderComplaintsList() {
           <div class="ci-ref">${c.ref} · ${c.cat}</div>
           <div class="ci-title">${c.loc}</div>
         </div>
-        <span class="status-badge status-${c.status}">${c.status}</span>
+        <div style="display:flex;gap:6px;align-items:center">
+          ${severityChip(c.severity)}
+          <span class="status-badge status-${c.status}">${c.status}</span>
+        </div>
       </div>
       <div class="ci-meta">
         <span><i class="fa-regular fa-calendar"></i> Filed: ${c.date}</span>
-        <span><i class="fa-solid fa-comment-dots"></i> ${c.note}</span>
+        <span><i class="fa-solid fa-comment-dots"></i> ${escapeHtml(c.note)}</span>
       </div>
       <div class="ci-progress">
         <div class="progress-track"><div class="progress-fill" style="width:${c.progress}%"></div></div>
         <span class="progress-label">${c.progress}% resolved</span>
+      </div>
+      <div style="margin-top:10px;text-align:right">
+        <button type="button" onclick="viewComplaint(${c.id})"
+          style="font-size:12px;padding:5px 12px;background:var(--surface);border:1.5px solid var(--border);border-radius:6px;cursor:pointer;font-weight:600;color:var(--text-2)">View Details</button>
       </div>
     </div>
   `).join('');
@@ -594,9 +650,12 @@ function mapRequestRow(row) {
 function mapComplaintRow(row) {
   const statusToProgress = { open: 0, investigating: 50, resolved: 100 };
   return {
+    id: Number(row.id),
     ref: row.reference_no,
     cat: row.category,
+    severity: (row.severity || 'medium').toLowerCase(),
     loc: row.location_text,
+    description: row.description || '',
     date: row.date_filed,
     status: row.status,
     progress: statusToProgress[row.status] ?? 0,
@@ -810,15 +869,18 @@ async function submitComplaint(formEl, form) {
   const category = document.getElementById('reqCategory')?.value || '';
   const location = document.getElementById('reqLocation')?.value || '';
   const description = document.getElementById('reqDescription')?.value || '';
+  const severity = document.getElementById('reqSeverity')?.value || 'medium';
+
   if (!category || !location || !description) {
     showToast('Missing Fields', 'Please complete all complaint details.');
     return;
   }
+
   try {
     await fetchJson(`${API_BASE}/complaints/create.php`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ category, location_text: location, description })
+      body: JSON.stringify({ category, location_text: location, description, severity })
     });
     form.style.display = 'none';
     formEl.reset();
