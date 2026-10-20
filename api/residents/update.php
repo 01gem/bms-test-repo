@@ -52,6 +52,10 @@ $previousProfile = $prevRows[0] ?? null;
 $birthdate = trim((string)($input['birthdate'] ?? '')) ?: null;
 $civil_status = trim((string)($input['civil_status'] ?? '')) ?: null;
 $purok_zone = trim((string)($input['purok_zone'] ?? '')) ?: null;
+$purok_zone = normalize_purok($purok_zone);
+if ($purok_zone === false) {
+  json_error('Purok must be Purok 1 through Purok 5.', 422);
+}
 $household_size = isset($input['household_size']) && $input['household_size'] !== '' ? (int)$input['household_size'] : 1;
 $is_solo_parent = !empty($input['is_solo_parent']) ? 1 : 0;
 $is_pwd = !empty($input['is_pwd']) ? 1 : 0;

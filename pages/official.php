@@ -211,7 +211,16 @@ if (count($officialNameParts) >= 2) {
 
               <div class="wz-household-pane" data-pane="new">
                 <div class="form-2col">
-                  <div class="field"><label>Household Purok / Zone</label><input type="text" name="household_purok_zone" class="form-input" placeholder="e.g. Purok 3" /></div>
+                  <div class="field"><label>Household Purok / Zone</label>
+                    <select name="household_purok_zone" class="form-input">
+                      <option value="">— Select —</option>
+                      <option value="Purok 1">Purok 1</option>
+                      <option value="Purok 2">Purok 2</option>
+                      <option value="Purok 3">Purok 3</option>
+                      <option value="Purok 4">Purok 4</option>
+                      <option value="Purok 5">Purok 5</option>
+                    </select>
+                  </div>
                   <div class="field" id="residentHouseholdSizeField"><label>Household Size</label><input type="number" name="household_size" class="form-input" min="1" value="1" /></div>
                 </div>
                 <div class="field" style="margin-top:8px;"><label>Household Address <span class="opt-label">(defaults to resident address)</span></label><input type="text" name="household_address" class="form-input" /></div>
@@ -257,7 +266,16 @@ if (count($officialNameParts) >= 2) {
                     </select>
                   </div>
                 </div>
-                <div class="field" style="margin-top:8px;"><label>Purok / Zone</label><input type="text" name="purok_zone" class="form-input" placeholder="e.g. Purok 3" /></div>
+                <div class="field" style="margin-top:8px;"><label>Purok / Zone</label>
+                  <select name="purok_zone" class="form-input">
+                    <option value="">— Select —</option>
+                    <option value="Purok 1">Purok 1</option>
+                    <option value="Purok 2">Purok 2</option>
+                    <option value="Purok 3">Purok 3</option>
+                    <option value="Purok 4">Purok 4</option>
+                    <option value="Purok 5">Purok 5</option>
+                  </select>
+                </div>
                 <div id="residentHouseholdSizeSlot"></div>
                 <div class="form-2col profiling-checkboxes">
                   <label class="checkbox-label"><input type="checkbox" name="is_solo_parent" value="1" /> Solo Parent</label>

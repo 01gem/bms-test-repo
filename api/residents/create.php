@@ -84,6 +84,10 @@ if ($profileNow) {
   $birthdate = trim((string)($input['birthdate'] ?? '')) ?: null;
   $civil_status = trim((string)($input['civil_status'] ?? '')) ?: null;
   $purok_zone = trim((string)($input['purok_zone'] ?? '')) ?: null;
+  $purok_zone = normalize_purok($purok_zone);
+  if ($purok_zone === false) {
+    json_error('Purok must be Purok 1 through Purok 5.', 422);
+  }
   $is_solo_parent = !empty($input['is_solo_parent']) ? 1 : 0;
   $is_pwd = !empty($input['is_pwd']) ? 1 : 0;
   $is_4ps_member = !empty($input['is_4ps_member']) ? 1 : 0;
@@ -104,6 +108,11 @@ try {
   if ($householdMode === 'new') {
     $hAddress = trim((string)($input['household_address'] ?? '')) ?: $address;
     $hPurok = trim((string)($input['household_purok_zone'] ?? '')) ?: $purok_zone;
+    $hPurok = normalize_purok($hPurok);
+    if ($hPurok === false) {
+      $db->rollback();
+      json_error('Purok must be Purok 1 through Purok 5.', 422);
+    }
     $hSize = $household_size;
 
     // next_household_code() is not race-safe; retry once on a UNIQUE KEY collision (errno 1062).

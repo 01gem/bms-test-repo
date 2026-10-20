@@ -16,6 +16,9 @@ require_official_session();
 $db = get_db();
 $purok  = trim((string)($_GET['purok']  ?? ''));
 $status = trim((string)($_GET['status'] ?? ''));
+if ($purok !== '' && !in_array($purok, PUROK_OPTIONS, true)) {
+  json_error('Purok must be Purok 1 through Purok 5.', 400);
+}
 
 $sql = 'SELECT h.id, h.household_code, h.head_resident_id, h.address, h.purok_zone,
   h.household_size, h.profile_status, h.profile_completeness, h.profiled_at,

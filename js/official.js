@@ -34,6 +34,7 @@ let AUDIT_LOG = [];
 let ACTIVE_DOC_GEN_REQUEST = null;
 const FIXED_OFFICIAL_NAME = 'Hon. Erwin Astronomo';
 const FIXED_OFFICIAL_POSITION = 'Barangay Captain';
+const PUROK_OPTIONS = ['Purok 1', 'Purok 2', 'Purok 3', 'Purok 4', 'Purok 5'];
 function featureEnabled(name) {
   return name === 'sms' ? !!window.SMS_CONFIGURED : !!window.AI_CONFIGURED;
 }
@@ -2843,7 +2844,12 @@ function openEditResidentForm(dbId) {
   // ── Populate profiling fields ──
   if (form.birthdate) form.birthdate.value = resident.birthdate || '';
   if (form.civil_status) form.civil_status.value = resident.civil_status || '';
-  if (form.purok_zone) form.purok_zone.value = resident.purok_zone || '';
+  if (form.purok_zone) {
+    const stored = String(resident.purok_zone || '');
+    const match = /^Purok\s*([1-5])$/i.exec(stored);
+    const canonical = match ? `Purok ${match[1]}` : '';
+    form.purok_zone.value = PUROK_OPTIONS.includes(canonical) ? canonical : '';
+  }
   if (form.household_size) form.household_size.value = resident.household_size ?? 1;
   if (form.is_solo_parent) form.is_solo_parent.checked = !!resident.is_solo_parent;
   if (form.is_pwd) form.is_pwd.checked = !!resident.is_pwd;

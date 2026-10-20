@@ -41,6 +41,24 @@ function require_post(): void {
   }
 }
 
+const PUROK_OPTIONS = ['Purok 1', 'Purok 2', 'Purok 3', 'Purok 4', 'Purok 5'];
+
+/**
+ * Normalize a purok value to canonical form 'Purok N' (N in 1..5).
+ * Accepts "Purok 3", "purok 3", "3", "  Purok 3 ". Returns null for
+ * empty input. Returns false for non-empty input that is out of range
+ * or unparseable — callers must reject that case with a 422.
+ */
+function normalize_purok($raw) {
+  $value = trim((string)($raw ?? ''));
+  if ($value === '') return null;
+  if (preg_match('/^(?:purok\s*)?(\d+)$/i', $value, $m)) {
+    $n = (int)$m[1];
+    if ($n >= 1 && $n <= 5) return 'Purok ' . $n;
+  }
+  return false;
+}
+
 function require_official_session(): void {
   if (empty($_SESSION['official_id'])) {
     json_error('Unauthorized', 401);
