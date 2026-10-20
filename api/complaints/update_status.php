@@ -37,7 +37,7 @@ if ($severity !== '' && !in_array($severity, $allowedSeverity, true)) {
 }
 
 $db = get_db();
-$check = $db->prepare('SELECT id, resident_id, reference_no FROM complaints WHERE id = ? LIMIT 1');
+$check = $db->prepare('SELECT id, resident_id, reference_no, status AS old_status FROM complaints WHERE id = ? LIMIT 1');
 if (!$check) json_error('Failed to prepare complaint lookup.', 500);
 $check->bind_param('i', $id);
 $rows = db_query_all($check);
@@ -46,6 +46,7 @@ if (count($rows) === 0) {
   json_error('Complaint not found.', 404);
 }
 $complaint = $rows[0];
+$oldStatus = (string)($complaint['old_status'] ?? 'open');
 
 if ($severity !== '') {
   $stmt = $db->prepare('UPDATE complaints SET status = ?, official_note = ?, severity = ? WHERE id = ?');
@@ -62,6 +63,38 @@ if (!$stmt->execute()) {
 $stmt->close();
 
 $residentId = (int)($complaint['resident_id'] ?? 0);
+$newStatus = $status;
+$actorType = 'official';
+$officialId = isset($_SESSION['official_id']) ? (int)$_SESSION['official_id'] : null;
+$noteForTimeline = $officialNote !== '' ? $officialNote : null;
+$updStmt = $db->prepare(
+  'INSERT INTO complaint_updates (complaint_id, actor_type, actor_id, from_status, to_status, note)
+   VALUES (?, ?, ?, ?, ?, ?)'
+);
+if ($updStmt) {
+  $updStmt->bind_param('isisss', $id, $actorType, $officialId, $oldStatus, $newStatus, $noteForTimeline);
+  if (!$updStmt->execute()) error_log('complaint_updates insert failed: ' . $updStmt->error);
+  $updStmt->close();
+}
+
+if ($newStatus === 'investigating' && $residentId > 0) {
+  $firstName = '';
+  $nameStmt = $db->prepare('SELECT fname FROM residents WHERE id = ? LIMIT 1');
+  if ($nameStmt) {
+    $nameStmt->bind_param('i', $residentId);
+    $nameRows = db_query_all($nameStmt);
+    $nameStmt->close();
+    $firstName = trim((string)($nameRows[0]['fname'] ?? ''));
+  }
+  if ($firstName === '') $firstName = 'there';
+  notify_resident(
+    $residentId,
+    'complaint_investigating',
+    "Hi {$firstName}, your complaint {$complaint['reference_no']} is now being investigated by the barangay.",
+    'complaints_enabled'
+  );
+}
+
 if ($residentId > 0) {
   $title = 'Complaint Update';
   $body = "Your complaint {$complaint['reference_no']} is now {$status}.";

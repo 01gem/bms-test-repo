@@ -381,6 +381,20 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
               </div>
               <div class="field"><label>Home Address</label><div class="profile-readonly"><?= htmlspecialchars($residentProfile['address'], ENT_QUOTES, 'UTF-8') ?></div></div>
             </div>
+            <h3 class="card-section-title profile-additional-title">SMS Notifications</h3>
+            <form id="smsPrefForm" class="profile-form">
+              <label class="checkbox-label">
+                <input type="checkbox" name="complaints_enabled" value="1" checked /> Complaint updates
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="requests_enabled" value="1" checked /> Document request updates
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="announcements_enabled" value="1" checked /> Announcements
+              </label>
+              <small style="color:var(--text-3);font-size:11px">We text the contact number on file. Ask a barangay official to update it.</small>
+              <div class="form-actions"><button type="submit" class="btn-submit-form">Save Preferences</button></div>
+            </form>
             <h3 class="card-section-title profile-additional-title">Additional Information</h3>
             <div class="profile-form">
               <?php

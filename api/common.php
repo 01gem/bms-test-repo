@@ -376,4 +376,8 @@ function next_household_code(): string {
   $next = (int)$row['max_num'] + 1;
   return 'HH-' . str_pad((string)$next, 4, '0', STR_PAD_LEFT);
 }
+
+// Shared SMS helper. Loaded last so normalize_ph_phone() and get_db() are
+// already defined by the time sms.php's function bodies run.
+require_once __DIR__ . '/sms.php';
 ?>

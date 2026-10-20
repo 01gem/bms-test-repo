@@ -62,65 +62,6 @@ if ($residentContact === '') {
 $safeResident = $request['resident_name'] !== '' ? $request['resident_name'] : 'Resident';
 $smsMessage = "Hello {$safeResident}, your requested document ({$request['document_type']}) with reference number {$request['reference_no']} is now ready for pickup at the Barangay Hall of Sampaguita. Please bring a valid ID when claiming your document. - Barangay Hall of Sampaguita";
 
-function send_sms_via_httpsms(string $apiKey, string $fromNumber, string $toNumber, string $content, string $simSlot = 'SIM1'): void {
-  if ($apiKey === '' || $fromNumber === '' || $toNumber === '' || $content === '') {
-    json_error('SMS is not configured on this server.', 503);
-  }
-
-  $payload = json_encode([
-    'from' => $fromNumber,
-    'to' => $toNumber,
-    'content' => $content,
-    'sim' => $simSlot ?: 'SIM1'
-  ]);
-  if ($payload === false) {
-    json_error('SMS payload encoding failed.', 500);
-  }
-
-  if (!function_exists('curl_init')) {
-    json_error('SMS is not configured on this server.', 503);
-  }
-
-  $ch = curl_init('https://api.httpsms.com/v1/messages/send');
-  if ($ch === false) {
-    json_error('SMS send failed: could not initialize cURL.', 500);
-  }
-
-  curl_setopt_array($ch, [
-    CURLOPT_POST => true,
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_HTTPHEADER => [
-      'Content-Type: application/json',
-      'Accept: application/json',
-      'x-api-key: ' . $apiKey,
-      'Content-Length: ' . strlen($payload),
-    ],
-    CURLOPT_POSTFIELDS => $payload,
-    CURLOPT_CONNECTTIMEOUT => 10,
-    CURLOPT_TIMEOUT => 25,
-  ]);
-
-  $response = curl_exec($ch);
-  if ($response === false) {
-    $errorMessage = curl_error($ch);
-    curl_close($ch);
-    json_error('SMS send failed: ' . ($errorMessage !== '' ? $errorMessage : 'unable to reach httpSMS.'), 500);
-  }
-
-  $httpStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-  curl_close($ch);
-  if (!in_array($httpStatus, [200, 201, 202], true)) {
-    $decoded = json_decode($response, true);
-    $errorMessage = is_array($decoded) && !empty($decoded['message']) ? $decoded['message'] : $response;
-    json_error('SMS send failed: ' . $errorMessage, 500);
-  }
-}
-
-$smsApiKey = getenv('HTTPSMS_API_KEY') ?: '';
-$smsFromNumber = getenv('HTTPSMS_FROM_NUMBER') ?: '';
-$smsSimSlot = getenv('HTTPSMS_SIM_SLOT') ?: 'SIM1';
-send_sms_via_httpsms($smsApiKey, $smsFromNumber, $residentContact, $smsMessage, $smsSimSlot);
-
 $status = 'ready';
 $upStmt = $db->prepare("UPDATE document_requests SET status = ? WHERE id = ?");
 if (!$upStmt) json_error('Failed to prepare request status update.', 500);
@@ -138,10 +79,32 @@ log_audit(
   'Sent pickup notification',
   'document_request',
   (string)$request['reference_no'],
-  "Status updated to {$status}. SMS sent to {$residentContact}."
+  "Status updated to {$status}. Resident contact: {$residentContact}. SMS outcome recorded in sms_log."
 );
 
+$smsResult = notify_resident(
+  $residentId,
+  'request_pickup_ready',
+  $smsMessage,
+  'requests_enabled',
+  $residentContact
+);
+if ($smsResult['status'] === 'failed') {
+  http_response_code(500);
+  echo json_encode([
+    'success' => false,
+    'message' => $smsResult['reason'] ?? 'SMS send failed.',
+    'sms_status' => 'failed',
+    'sms_reason' => $smsResult['reason'] ?? 'SMS send failed.',
+  ]);
+  exit;
+}
+$successMessage = $smsResult['status'] === 'sent'
+  ? "SMS ready notice sent to {$residentContact} from Barangay Hall of Sampaguita."
+  : "Request marked ready. {$smsResult['reason']}";
 json_success([
-  'message' => "SMS ready notice sent to {$residentContact} from Barangay Hall of Sampaguita."
+  'message' => $successMessage,
+  'sms_status' => $smsResult['status'],
+  'sms_reason' => $smsResult['reason'],
 ]);
 ?>

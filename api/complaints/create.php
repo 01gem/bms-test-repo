@@ -53,7 +53,28 @@ $stmt->bind_param('isssssssss',
 if (!$stmt->execute()) {
   json_db_error('Failed to submit complaint', $stmt->error);
 }
+$complaintId = (int)$db->insert_id;
 $stmt->close();
+
+$actorType = 'resident';
+$fromStatus = null;
+$toStatus = 'open';
+$filedNote = 'Complaint filed.';
+$updStmt = $db->prepare(
+  'INSERT INTO complaint_updates (complaint_id, actor_type, actor_id, from_status, to_status, note)
+   VALUES (?, ?, ?, ?, ?, ?)'
+);
+if ($updStmt) {
+  $updStmt->bind_param('isisss', $complaintId, $actorType, $residentId, $fromStatus, $toStatus, $filedNote);
+  if (!$updStmt->execute()) error_log('complaint_updates insert failed: ' . $updStmt->error);
+  $updStmt->close();
+}
+
+$residentFirstName = trim(explode(' ', $residentName)[0] ?? $residentName);
+if ($residentFirstName === '') $residentFirstName = 'there';
+$smsBody = "Hi {$residentFirstName}, your complaint {$ref} was received by Brgy. Sampaguita. "
+         . "We'll update you on any changes.";
+notify_resident($residentId, 'complaint_filed', $smsBody, 'complaints_enabled');
 
 json_success(['reference_no' => $ref, 'message' => 'Complaint submitted successfully.']);
 ?>

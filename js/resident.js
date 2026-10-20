@@ -471,6 +471,7 @@ function initReqFormToggle() {
 }
 
 // ── COMPLAINTS LIST ───────────────────────
+// Keep in sync with the identical severityChip() in js/official.js.
 function severityChip(severity) {
   const map = {
     low:      { bg: '#DCFCE7', color: '#15803D', label: 'Low' },
@@ -480,6 +481,29 @@ function severityChip(severity) {
   };
   const s = map[String(severity).toLowerCase()] || map.medium;
   return `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${s.bg};color:${s.color}">${s.label}</span>`;
+}
+
+async function loadComplaintTimeline(complaintId) {
+  const data = await fetchJson(`${API_BASE}/complaints/timeline.php?complaint_id=${encodeURIComponent(complaintId)}`);
+  return data.updates || [];
+}
+
+function renderTimelineHtml(updates) {
+  if (!updates.length) {
+    return '<p style="color:var(--text-3);font-size:12.5px">No timeline entries yet.</p>';
+  }
+  return '<ol style="list-style:none;padding:0;margin:0">' + updates.map(u => {
+    const when = u.created_at ? escapeHtml(String(u.created_at)) : '';
+    const who = escapeHtml(u.actor_name || (u.actor_type === 'system' ? 'System' : u.actor_type));
+    const from = u.from_status ? `${escapeHtml(u.from_status)} → ` : '';
+    const to = escapeHtml(u.to_status || '');
+    const note = u.note ? `<div style="color:var(--text-2);margin-top:3px">${escapeHtml(u.note)}</div>` : '';
+    return `<li style="padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--text-3)">${when}</div>
+      <div style="font-weight:600;color:var(--text);font-size:13px">${who} — ${from}${to}</div>
+      ${note}
+    </li>`;
+  }).join('') + '</ol>';
 }
 
 function viewComplaint(id) {
@@ -515,9 +539,20 @@ function viewComplaint(id) {
         </div>`;
       }).join('')}
     </dl>
+    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Timeline</h4>
+    <div id="complaintTimeline" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;padding:0 12px"></div>
     <button type="button" onclick="closeRequestModal()" style="padding:9px 24px;background:var(--blue-mid);color:white;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">Close</button>
   `;
   document.getElementById('requestModal').classList.add('show');
+  loadComplaintTimeline(c.id)
+    .then(updates => {
+      const el = document.getElementById('complaintTimeline');
+      if (el) el.innerHTML = renderTimelineHtml(updates);
+    })
+    .catch(() => {
+      const el = document.getElementById('complaintTimeline');
+      if (el) el.textContent = 'Timeline unavailable.';
+    });
 }
 
 function renderComplaintsList() {
@@ -894,6 +929,34 @@ async function submitComplaint(formEl, form) {
 
 // ── TOAST ─────────────────────────────────
 let toastTimeout;
+async function initSmsPreferences() {
+  const form = document.getElementById('smsPrefForm');
+  if (!form) return;
+  try {
+    const data = await fetchJson(`${API_BASE}/residents/sms_preferences.php`);
+    form.complaints_enabled.checked = Number(data.complaints_enabled) === 1;
+    form.requests_enabled.checked   = Number(data.requests_enabled)   === 1;
+    form.announcements_enabled.checked = Number(data.announcements_enabled) === 1;
+  } catch { /* non-fatal */ }
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await fetchJson(`${API_BASE}/residents/sms_preferences.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          complaints_enabled: form.complaints_enabled.checked ? 1 : 0,
+          requests_enabled: form.requests_enabled.checked ? 1 : 0,
+          announcements_enabled: form.announcements_enabled.checked ? 1 : 0,
+        }),
+      });
+      showToast('SMS Preferences', 'Your notification preferences were saved.');
+    } catch (err) {
+      showToast('Save Failed', err.message);
+    }
+  });
+}
+
 function initProfilePhotoUpload() {
   const form = document.getElementById('profilePhotoForm');
   const input = document.getElementById('profilePhotoInput');
@@ -1043,6 +1106,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initNotifDrawer();
   initMarkAllRead();
   initProfilePhotoUpload();
+  initSmsPreferences();
   startResidentPolling();
   (async () => {
     try {

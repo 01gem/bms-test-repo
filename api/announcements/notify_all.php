@@ -17,66 +17,10 @@ if (empty($_SESSION['official_id'])) {
 
 require_post();
 
-function send_announcement_sms(string $apiKey, string $fromNumber, string $toNumber, string $content, string $simSlot): array {
-  if ($apiKey === '' || $fromNumber === '' || $toNumber === '' || $content === '') {
-    return ['ok' => false, 'error' => 'SMS configuration or recipient data is missing.'];
-  }
-  $payload = json_encode([
-    'from' => $fromNumber,
-    'to' => $toNumber,
-    'content' => $content,
-    'sim' => $simSlot ?: 'SIM1'
-  ]);
-  if ($payload === false) {
-    return ['ok' => false, 'error' => 'SMS payload encoding failed.'];
-  }
-  if (!function_exists('curl_init')) {
-    return ['ok' => false, 'error' => 'SMS send failed: PHP cURL extension is not enabled.'];
-  }
-
-  $ch = curl_init('https://api.httpsms.com/v1/messages/send');
-  if ($ch === false) {
-    return ['ok' => false, 'error' => 'SMS send failed: could not initialize cURL.'];
-  }
-  curl_setopt_array($ch, [
-    CURLOPT_POST => true,
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_HTTPHEADER => [
-      'Content-Type: application/json',
-      'Accept: application/json',
-      'x-api-key: ' . $apiKey,
-      'Content-Length: ' . strlen($payload),
-    ],
-    CURLOPT_POSTFIELDS => $payload,
-    CURLOPT_CONNECTTIMEOUT => 10,
-    CURLOPT_TIMEOUT => 25,
-  ]);
-  $response = curl_exec($ch);
-  if ($response === false) {
-    $error = curl_error($ch);
-    curl_close($ch);
-    return ['ok' => false, 'error' => $error !== '' ? $error : 'Unable to reach httpSMS.'];
-  }
-  $httpStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-  curl_close($ch);
-  if (!in_array($httpStatus, [200, 201, 202], true)) {
-    $decoded = json_decode($response, true);
-    $message = is_array($decoded) && !empty($decoded['message']) ? $decoded['message'] : trim($response);
-    return ['ok' => false, 'error' => $message !== '' ? $message : "httpSMS returned HTTP {$httpStatus}."];
-  }
-  return ['ok' => true, 'error' => ''];
-}
-
 $input = read_json_input();
 $announcementId = (int)($input['id'] ?? $input['announcement_id'] ?? 0);
 if ($announcementId <= 0) {
   json_error('Valid announcement id is required.');
-}
-
-$smsApiKey = getenv('HTTPSMS_API_KEY') ?: '';
-$smsFromNumber = getenv('HTTPSMS_FROM_NUMBER') ?: '';
-if ($smsApiKey === '' || $smsFromNumber === '') {
-  json_error('SMS is not configured on this server.', 503);
 }
 
 $db = get_db();
@@ -107,22 +51,13 @@ $residentsStmt->close();
 $sent = 0;
 $skipped = 0;
 $failed = 0;
-$smsSimSlot = getenv('HTTPSMS_SIM_SLOT') ?: 'SIM1';
 
 foreach ($residents as $resident) {
   $residentId = (int)$resident['id'];
-  $contact = trim((string)($resident['contact'] ?? ''));
-  $contact = normalize_ph_phone($contact) ?? $contact;
-  if ($contact === '') {
-    $skipped++;
-    continue;
-  }
+  $result = notify_resident($residentId, 'announcement_broadcast', $smsMessage, 'announcements_enabled');
 
-  $result = send_announcement_sms($smsApiKey, $smsFromNumber, $contact, $smsMessage, $smsSimSlot);
-  if (!$result['ok']) {
-    $failed++;
-    continue;
-  }
+  if ($result['status'] === 'skipped') { $skipped++; continue; }
+  if ($result['status'] === 'failed')  { $failed++;  continue; }
 
   $sent++;
   $notificationTitle = 'New Announcement';
