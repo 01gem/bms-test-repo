@@ -7,6 +7,7 @@
  */
 
 require_once __DIR__ . '/../common.php';
+require_once __DIR__ . '/_extra_fields.php';
 session_start();
 
 if (empty($_SESSION['resident_id'])) {
@@ -18,7 +19,14 @@ if (empty($_SESSION['resident_id'])) {
 require_post();
 
 $db = get_db();
-$input = read_json_input();
+$rawRequest = json_decode(file_get_contents('php://input'));
+if (!$rawRequest instanceof stdClass) json_error('A valid JSON object is required.', 422);
+$input = get_object_vars($rawRequest);
+foreach (['category', 'location_text', 'description', 'severity'] as $field) {
+  if (array_key_exists($field, $input) && $input[$field] !== null && !is_string($input[$field])) {
+    json_error('Complaint fields must be text.', 422);
+  }
+}
 
 $category = trim((string)($input['category'] ?? ''));
 $location = trim((string)($input['location_text'] ?? ''));
@@ -30,6 +38,15 @@ if (!in_array($severity, $allowedSeverity, true)) {
 }
 if ($category === '' || $location === '' || $description === '') {
   json_error('Category, location, and description are required.');
+}
+
+try {
+  $extraFields = complaint_extra_fields_validate($category, $input['extra_fields'] ?? null);
+  $extraFieldsJson = $extraFields
+    ? json_encode((object)$extraFields, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)
+    : null;
+} catch (InvalidArgumentException $error) {
+  json_error($error->getMessage(), 422);
 }
 
 $prefix = 'CSR-' . date('Ymd') . '-';
@@ -44,12 +61,12 @@ $status = 'open';
 $note = 'Received. Awaiting assignment.';
 
 $stmt = $db->prepare("INSERT INTO complaints
-  (resident_id, reference_no, resident_name, category, severity, location_text, description, date_filed, status, official_note)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+  (resident_id, reference_no, resident_name, category, severity, location_text, description, date_filed, status, official_note, extra_fields_json)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 if (!$stmt) json_error('Failed to prepare complaint insert.', 500);
-$stmt->bind_param('isssssssss',
+$stmt->bind_param('issssssssss',
   $residentId, $ref, $residentName, $category, $severity,
-  $location, $description, $dateFiled, $status, $note);
+  $location, $description, $dateFiled, $status, $note, $extraFieldsJson);
 if (!$stmt->execute()) {
   json_db_error('Failed to submit complaint', $stmt->error);
 }

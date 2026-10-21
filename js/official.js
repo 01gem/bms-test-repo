@@ -1826,6 +1826,24 @@ function initComplaintAssignment(box, complaint, seq) {
   recover(false);
 }
 
+// Keep in sync with js/resident.js renderComplaintExtraFieldsHtml.
+function renderComplaintExtraFieldsHtml(fields) {
+  if (!Array.isArray(fields)) return '';
+  const rows = fields.filter(field => field
+    && typeof field.label === 'string' && typeof field.value === 'string'
+    && field.label !== '' && field.value !== '');
+  if (!rows.length) return '';
+  return `<section data-complaint-extra-details style="margin:0 0 16px">
+    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Additional details</h4>
+    <dl style="display:grid;gap:8px;margin:0">${rows.map(field => `
+      <div style="padding:8px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:7px">
+        <dt style="font-size:11px;color:var(--text-3)">${escapeHtml(field.label)}</dt>
+        <dd style="margin:4px 0 0;font-size:13px;color:var(--text)">${escapeHtml(field.value)}</dd>
+      </div>`).join('')}
+    </dl>
+  </section>`;
+}
+
 function viewComplaint(id) {
   const seq = ++officialComplaintDetailSeq;
   const c = COMPLAINTS_ADMIN.find(x => Number(x.id) === Number(id));
@@ -1867,6 +1885,7 @@ function viewComplaint(id) {
       <div style="font-size:13px;color:var(--text-2);line-height:1.5">${escapeHtml(c.note)}</div>
     </div>` : ''}
     <p style="font-size:12px;color:var(--text-3);margin:0 0 16px">Status, severity, and notes can be updated using the controls on the complaint card. Close this view to make changes.</p>
+    ${renderComplaintExtraFieldsHtml(c.extraFieldsDisplay)}
     ${complaintResidentResponseSectionHtml(c)}
     ${complaintTriageSectionHtml(c)}
     <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Timeline</h4>
@@ -2052,6 +2071,9 @@ function mapComplaintRow(row) {
     slaDueAt: row.sla_due_at ? String(row.sla_due_at) : null,
     escalatedAt: row.escalated_at ? String(row.escalated_at) : null,
     isOverdue: Number(row.is_overdue) === 1,
+    extraFields: row.extra_fields && typeof row.extra_fields === 'object' && !Array.isArray(row.extra_fields)
+      ? row.extra_fields : {},
+    extraFieldsDisplay: Array.isArray(row.extra_fields_display) ? row.extra_fields_display : [],
   };
 }
 

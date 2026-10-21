@@ -7,6 +7,7 @@
  */
 
 require_once __DIR__ . '/../common.php';
+require_once __DIR__ . '/_extra_fields.php';
 session_start();
 
 $officialSession = !empty($_SESSION['official_id']);
@@ -19,7 +20,7 @@ if (!$officialSession && !$residentSession) {
 
 $db = get_db();
 
-$sql = "SELECT c.id, c.resident_id, c.reference_no, c.resident_name, c.category, c.severity, c.location_text, c.description, c.date_filed, c.status, c.official_note,
+$sql = "SELECT c.id, c.resident_id, c.reference_no, c.resident_name, c.category, c.severity, c.location_text, c.description, c.date_filed, c.status, c.official_note, c.extra_fields_json,
         c.resident_confirmation, c.confirmed_at, c.reopened_at,
         c.assigned_official_id, c.sla_due_at, c.escalated_at,
         CASE
@@ -52,6 +53,14 @@ if (!$officialSession) {
 }
 $rows = db_query_all($stmt);
 $stmt->close();
+
+foreach ($rows as &$row) {
+  $extraFields = complaint_extra_fields_read((string)$row['category'], $row['extra_fields_json']);
+  $row['extra_fields'] = (object)$extraFields;
+  $row['extra_fields_display'] = complaint_extra_fields_display((string)$row['category'], $extraFields);
+  unset($row['extra_fields_json']);
+}
+unset($row);
 
 json_success(['complaints' => $rows]);
 ?>

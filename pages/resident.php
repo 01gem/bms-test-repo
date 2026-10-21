@@ -7,6 +7,7 @@
  */
 
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/../api/complaints/_extra_fields.php';
 session_start();
 function e($value) {
   return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
@@ -326,6 +327,26 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
               <label>Description</label>
               <textarea class="form-input" id="reqDescription" rows="4" placeholder="Describe the issue in detail..." required></textarea>
             </div>
+            <?php foreach (complaint_extra_fields_schema() as $extraCategory => $extraFieldDefs): ?>
+              <?php if ($extraFieldDefs === []) continue; ?>
+              <fieldset hidden disabled data-complaint-extra-category="<?= e($extraCategory) ?>" style="margin:12px 0 0;border:0;padding:0;min-inline-size:0">
+                <legend style="padding:0;margin:0 0 8px;font-size:13px;font-weight:600;color:var(--text)">Additional details (optional)</legend>
+                <div class="form-3col">
+                  <?php foreach ($extraFieldDefs as $extraKey => $extraField): ?>
+                    <?php $extraControlId = 'complaint-extra-' . $extraKey; ?>
+                    <div class="field">
+                      <label for="<?= e($extraControlId) ?>"><?= e($extraField['label']) ?></label>
+                      <select class="form-input" id="<?= e($extraControlId) ?>" data-complaint-extra-key="<?= e($extraKey) ?>" disabled>
+                        <option value="">Not specified</option>
+                        <?php foreach ($extraField['options'] as $extraOptionValue => $extraOptionLabel): ?>
+                          <option value="<?= e($extraOptionValue) ?>"><?= e($extraOptionLabel) ?></option>
+                        <?php endforeach; ?>
+                      </select>
+                    </div>
+                  <?php endforeach; ?>
+                </div>
+              </fieldset>
+            <?php endforeach; ?>
             <div class="field" style="margin-top:12px;">
               <label>Photos <span class="opt-label">(optional, up to 3, JPEG or PNG, max 5MB each)</span></label>
               <input type="file" id="reqPhotos" name="photos[]" class="form-input" accept="image/jpeg,image/png" multiple />

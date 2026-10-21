@@ -1116,6 +1116,24 @@ function restoreComplaintDrafts(box, draft) {
   if (commentInput && draft.commentDraft) commentInput.value = draft.commentDraft;
 }
 
+// Keep in sync with js/official.js renderComplaintExtraFieldsHtml.
+function renderComplaintExtraFieldsHtml(fields) {
+  if (!Array.isArray(fields)) return '';
+  const rows = fields.filter(field => field
+    && typeof field.label === 'string' && typeof field.value === 'string'
+    && field.label !== '' && field.value !== '');
+  if (!rows.length) return '';
+  return `<section data-complaint-extra-details style="margin:0 0 16px">
+    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Additional details</h4>
+    <dl style="display:grid;gap:8px;margin:0">${rows.map(field => `
+      <div style="padding:8px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:7px">
+        <dt style="font-size:11px;color:var(--text-3)">${escapeHtml(field.label)}</dt>
+        <dd style="margin:4px 0 0;font-size:13px;color:var(--text)">${escapeHtml(field.value)}</dd>
+      </div>`).join('')}
+    </dl>
+  </section>`;
+}
+
 async function viewComplaint(id) {
   const seq = ++complaintDetailSeq;
   const openGeneration = complaintOpenGeneration;
@@ -1177,6 +1195,7 @@ async function viewComplaint(id) {
         </div>`;
       }).join('')}
     </dl>
+    ${renderComplaintExtraFieldsHtml(c.extraFieldsDisplay)}
     ${complaintResidentResponseSectionHtml(c)}
     ${complaintTriageSectionHtml(c)}
     <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Timeline</h4>
@@ -1247,6 +1266,44 @@ function renderComplaintsList() {
       </div>
     </div>
   `).join('');
+}
+
+function syncComplaintExtraFields(formEl) {
+  if (!formEl) return;
+  const category = formEl.querySelector('#reqCategory')?.value || '';
+  const locked = !!getRetryState(formEl);
+  formEl.querySelectorAll('[data-complaint-extra-category]').forEach(group => {
+    const active = group.dataset.complaintExtraCategory === category;
+    group.hidden = !active;
+    group.disabled = locked || !active;
+    group.querySelectorAll('[data-complaint-extra-key]').forEach(control => {
+      if (!locked && !active) control.value = '';
+      control.disabled = locked || !active;
+    });
+  });
+}
+
+function collectComplaintExtraFields(formEl) {
+  const values = {};
+  if (!formEl || getRetryState(formEl)) return values;
+  const category = formEl.querySelector('#reqCategory')?.value || '';
+  formEl.querySelectorAll('[data-complaint-extra-category]').forEach(group => {
+    if (group.hidden || group.disabled || group.dataset.complaintExtraCategory !== category) return;
+    group.querySelectorAll('[data-complaint-extra-key]').forEach(control => {
+      if (!control.disabled && control.value !== '') values[control.dataset.complaintExtraKey] = control.value;
+    });
+  });
+  return values;
+}
+
+function initComplaintExtraFields() {
+  const formEl = document.getElementById('complaintFormEl');
+  if (!formEl) return;
+  formEl.querySelector('#reqCategory')?.addEventListener('change', () => syncComplaintExtraFields(formEl));
+  formEl.addEventListener('reset', () => {
+    queueMicrotask(() => syncComplaintExtraFields(formEl));
+  });
+  syncComplaintExtraFields(formEl);
 }
 
 function initComplaintFormToggle() {
@@ -1436,6 +1493,9 @@ function mapComplaintRow(row) {
     slaDueAt: row.sla_due_at ? String(row.sla_due_at) : null,
     escalatedAt: row.escalated_at ? String(row.escalated_at) : null,
     isOverdue: Number(row.is_overdue) === 1,
+    extraFields: row.extra_fields && typeof row.extra_fields === 'object' && !Array.isArray(row.extra_fields)
+      ? row.extra_fields : {},
+    extraFieldsDisplay: Array.isArray(row.extra_fields_display) ? row.extra_fields_display : [],
   };
 }
 
@@ -1664,7 +1724,7 @@ async function submitComplaint(formEl, form) {
     created = await fetchJson(`${API_BASE}/complaints/create.php`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ category, location_text: location, description, severity })
+      body: JSON.stringify({ category, location_text: location, description, severity, extra_fields: collectComplaintExtraFields(formEl) })
     });
     complaintId = Number(created.id) || 0;
   } catch (err) {
@@ -1793,6 +1853,7 @@ function closeComplaintRetryMode(formEl) {
   // form.reset() is unreliable for FileList across engines — force-clear.
   state.formEl.querySelectorAll('input[type="file"]').forEach(el => { el.value = ''; });
   clearRetryState(formEl);
+  syncComplaintExtraFields(formEl);
 }
 
 function skipPendingComplaintUploads(formEl) {
@@ -1980,6 +2041,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initRequestsTable();
   initReqFormToggle();
   initComplaintFormToggle();
+  initComplaintExtraFields();
   initComplaintPhotoInput();
   initNotifDrawer();
   initMarkAllRead();
