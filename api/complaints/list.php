@@ -19,12 +19,16 @@ if (!$officialSession && !$residentSession) {
 
 $db = get_db();
 
-$sql = "SELECT id, resident_id, reference_no, resident_name, category, severity, location_text, description, date_filed, status, official_note
-        FROM complaints";
+$sql = "SELECT c.id, c.resident_id, c.reference_no, c.resident_name, c.category, c.severity, c.location_text, c.description, c.date_filed, c.status, c.official_note,
+        c.resident_confirmation, c.confirmed_at, c.reopened_at,
+        COALESCE((SELECT MAX(u.id) FROM complaint_updates u
+                  WHERE u.complaint_id = c.id AND u.to_status = 'resolved'
+                    AND COALESCE(u.from_status, '') <> 'resolved'), 0) AS resolution_update_id
+        FROM complaints c";
 if ($officialSession) {
-  $sql .= ' ORDER BY id DESC';
+  $sql .= ' ORDER BY c.id DESC';
 } else {
-  $sql .= ' WHERE resident_id = ? ORDER BY id DESC';
+  $sql .= ' WHERE c.resident_id = ? ORDER BY c.id DESC';
 }
 $stmt = $db->prepare($sql);
 if (!$stmt) json_error('Failed to prepare complaints query.', 500);

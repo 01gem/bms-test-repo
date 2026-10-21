@@ -77,7 +77,7 @@ function send_sms(string $to, string $content): array {
 
 /**
  * Fire-and-forget SMS to a resident. Runs the decision tree:
- * config -> contact -> normalize -> preference -> daily cap (5/24h) -> send -> log.
+ * config -> contact -> normalize -> preference -> per-resident/event cap (5/24h) -> send -> log.
  *
  * @param int    $residentId
  * @param string $endpoint    Short label for sms_log, e.g. 'complaint_filed'.
@@ -140,14 +140,14 @@ function notify_resident(
     return ['status' => 'skipped', 'reason' => 'Resident has disabled this SMS category.'];
   }
 
-  $cStmt = $db->prepare("SELECT COUNT(*) AS c FROM sms_log WHERE resident_id = ? AND status = 'sent' AND created_at > NOW() - INTERVAL 1 DAY");
+  $cStmt = $db->prepare("SELECT COUNT(*) AS c FROM sms_log WHERE resident_id = ? AND endpoint = ? AND status = 'sent' AND created_at > NOW() - INTERVAL 1 DAY");
   if ($cStmt) {
-    $cStmt->bind_param('i', $residentId);
+    $cStmt->bind_param('is', $residentId, $endpoint);
     $cRows = db_query_all($cStmt);
     $cStmt->close();
     if ((int)($cRows[0]['c'] ?? 0) >= 5) {
       sms_log_write($db, $residentId, $endpoint, $to, 'skipped', 'daily_cap');
-      return ['status' => 'skipped', 'reason' => 'Daily SMS limit reached for this resident.'];
+      return ['status' => 'skipped', 'reason' => 'Daily SMS limit reached for this resident and event type.'];
     }
   }
 

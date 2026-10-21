@@ -36,89 +36,188 @@ if ($severity !== '' && !in_array($severity, $allowedSeverity, true)) {
   json_error('Invalid severity. Allowed values are: low, medium, high, critical.');
 }
 
+$officialId = (int)$_SESSION['official_id'];
+$officialName = (string)($_SESSION['official_name'] ?? '');
+session_write_close();
+
 $db = get_db();
-$check = $db->prepare('SELECT id, resident_id, reference_no, status AS old_status FROM complaints WHERE id = ? LIMIT 1');
-if (!$check) json_error('Failed to prepare complaint lookup.', 500);
-$check->bind_param('i', $id);
-$rows = db_query_all($check);
-$check->close();
-if (count($rows) === 0) {
-  json_error('Complaint not found.', 404);
-}
-$complaint = $rows[0];
-$oldStatus = (string)($complaint['old_status'] ?? 'open');
-
-if ($severity !== '') {
-  $stmt = $db->prepare('UPDATE complaints SET status = ?, official_note = ?, severity = ? WHERE id = ?');
-  if (!$stmt) json_error('Failed to prepare complaint update.', 500);
-  $stmt->bind_param('sssi', $status, $officialNote, $severity, $id);
-} else {
-  $stmt = $db->prepare('UPDATE complaints SET status = ?, official_note = ? WHERE id = ?');
-  if (!$stmt) json_error('Failed to prepare complaint update.', 500);
-  $stmt->bind_param('ssi', $status, $officialNote, $id);
-}
-if (!$stmt->execute()) {
-  json_db_error('Failed to update complaint', $stmt->error);
-}
-$stmt->close();
-
-$residentId = (int)($complaint['resident_id'] ?? 0);
-$newStatus = $status;
-$actorType = 'official';
-$officialId = isset($_SESSION['official_id']) ? (int)$_SESSION['official_id'] : null;
-$noteForTimeline = $officialNote !== '' ? $officialNote : null;
-$updStmt = $db->prepare(
-  'INSERT INTO complaint_updates (complaint_id, actor_type, actor_id, from_status, to_status, note)
-   VALUES (?, ?, ?, ?, ?, ?)'
-);
-if ($updStmt) {
-  $updStmt->bind_param('isisss', $id, $actorType, $officialId, $oldStatus, $newStatus, $noteForTimeline);
-  if (!$updStmt->execute()) error_log('complaint_updates insert failed: ' . $updStmt->error);
-  $updStmt->close();
-}
-
-if ($newStatus === 'investigating' && $residentId > 0) {
-  $firstName = '';
-  $nameStmt = $db->prepare('SELECT fname FROM residents WHERE id = ? LIMIT 1');
-  if ($nameStmt) {
-    $nameStmt->bind_param('i', $residentId);
-    $nameRows = db_query_all($nameStmt);
-    $nameStmt->close();
-    $firstName = trim((string)($nameRows[0]['fname'] ?? ''));
-  }
-  if ($firstName === '') $firstName = 'there';
-  notify_resident(
-    $residentId,
-    'complaint_investigating',
-    "Hi {$firstName}, your complaint {$complaint['reference_no']} is now being investigated by the barangay.",
-    'complaints_enabled'
+$changed = false;
+$statusChanged = false;
+$residentId = 0;
+$referenceNo = '';
+try {
+  if (!$db->begin_transaction()) throw new RuntimeException($db->error);
+  $stmt = $db->prepare(
+    'SELECT id, status, official_note, severity, resident_confirmation, confirmed_at, resident_id, reference_no
+       FROM complaints WHERE id = ? FOR UPDATE'
   );
-}
+  if (!$stmt) throw new RuntimeException($db->error);
+  $stmt->bind_param('i', $id);
+  if (!$stmt->execute()) throw new RuntimeException($stmt->error);
+  $result = $stmt->get_result();
+  if (!$result) throw new RuntimeException($stmt->error);
+  $complaint = $result->fetch_assoc();
+  $stmt->close();
+  if (!$complaint) throw new DomainException('Complaint not found.', 404);
 
-if ($residentId > 0) {
-  $title = 'Complaint Update';
-  $body = "Your complaint {$complaint['reference_no']} is now {$status}.";
-  $createdAt = date('Y-m-d H:i:s');
-  $isRead = 0;
-
-  $notify = $db->prepare('INSERT INTO notifications (resident_id, title, body, is_read, created_at) VALUES (?, ?, ?, ?, ?)');
-  if (!$notify) json_error('Failed to prepare complaint notification insert.', 500);
-  $notify->bind_param('issis', $residentId, $title, $body, $isRead, $createdAt);
-  if (!$notify->execute()) {
-    json_db_error('Failed to create complaint notification', $notify->error);
+  $residentId = (int)($complaint['resident_id'] ?? 0);
+  $referenceNo = (string)$complaint['reference_no'];
+  $storedNote = (string)($complaint['official_note'] ?? '');
+  $storedSeverity = (string)($complaint['severity'] ?? '');
+  $effectiveSeverity = $severity !== '' ? $severity : $storedSeverity;
+  $oldStatus = (string)$complaint['status'];
+  $statusChanged = $oldStatus !== $status;
+  $noteChanged = $storedNote !== $officialNote;
+  $severityChanged = $effectiveSeverity !== $storedSeverity;
+  $confirmation = $complaint['resident_confirmation'];
+  $confirmedAt = $complaint['confirmed_at'];
+  if ($statusChanged) {
+    if ($status === 'resolved') {
+      $confirmation = 'pending';
+    } else {
+      $confirmation = $oldStatus !== 'resolved' && $confirmation === 'reopened' ? 'reopened' : null;
+    }
+    $confirmedAt = null;
   }
-  $notify->close();
+  $changed = $statusChanged || $noteChanged || $severityChanged;
+  if ($changed) {
+    $confirmationIsNull = $confirmation === null ? 1 : 0;
+    $confirmationValue = $confirmation === null ? '' : (string)$confirmation;
+    $confirmedIsNull = $confirmedAt === null ? 1 : 0;
+    $confirmedValue = $confirmedAt === null ? '1000-01-01 00:00:00' : (string)$confirmedAt;
+    $update = $db->prepare(
+      'UPDATE complaints
+          SET status = ?, official_note = ?, severity = ?,
+              resident_confirmation = CASE WHEN ? = 1 THEN NULL ELSE ? END,
+              confirmed_at = CASE WHEN ? = 1 THEN NULL ELSE ? END
+        WHERE id = ?'
+    );
+    if (!$update) throw new RuntimeException($db->error);
+    $update->bind_param(
+      'sssisisi',
+      $status,
+      $officialNote,
+      $effectiveSeverity,
+      $confirmationIsNull,
+      $confirmationValue,
+      $confirmedIsNull,
+      $confirmedValue,
+      $id
+    );
+    if (!$update->execute()) {
+      $updateError = $update->error;
+      $update->close();
+      throw new RuntimeException($updateError);
+    }
+    $update->close();
+
+    $actorType = 'official';
+    $timelineNoteIsNull = $officialNote === '' ? 1 : 0;
+    $timelineNote = $officialNote;
+    $timeline = $db->prepare(
+      'INSERT INTO complaint_updates (complaint_id, actor_type, actor_id, from_status, to_status, note)
+       VALUES (?, ?, ?, ?, ?, IF(? = 1, NULL, ?))'
+    );
+    if (!$timeline) throw new RuntimeException($db->error);
+    $timeline->bind_param('isissis', $id, $actorType, $officialId, $oldStatus, $status, $timelineNoteIsNull, $timelineNote);
+    if (!$timeline->execute()) {
+      $timelineError = $timeline->error;
+      $timeline->close();
+      throw new RuntimeException($timelineError);
+    }
+    $timeline->close();
+
+    $auditOk = log_audit(
+      $db,
+      $officialId,
+      $officialName,
+      'Updated complaint status',
+      'complaint',
+      $referenceNo,
+      "New status: {$status}"
+    );
+    if (!$auditOk) throw new RuntimeException('Audit log failed');
+
+    if ($statusChanged && $residentId > 0) {
+      $title = 'Complaint Update';
+      $body = "Your complaint {$referenceNo} is now {$status}.";
+      $createdAt = date('Y-m-d H:i:s');
+      $isRead = 0;
+      $notify = $db->prepare('INSERT INTO notifications (resident_id, title, body, is_read, created_at) VALUES (?, ?, ?, ?, ?)');
+      if (!$notify) throw new RuntimeException($db->error);
+      $notify->bind_param('issis', $residentId, $title, $body, $isRead, $createdAt);
+      if (!$notify->execute()) {
+        $notifyError = $notify->error;
+        $notify->close();
+        throw new RuntimeException($notifyError);
+      }
+      $notify->close();
+    }
+  }
+  if (!$db->commit()) throw new RuntimeException($db->error);
+} catch (DomainException $error) {
+  $db->rollback();
+  json_error($error->getMessage(), $error->getCode());
+} catch (Throwable $error) {
+  $db->rollback();
+  json_db_error('Failed to update complaint', $error->getMessage());
 }
 
-log_audit(
-  $db,
-  isset($_SESSION['official_id']) ? (int)$_SESSION['official_id'] : null,
-  (string)($_SESSION['official_name'] ?? ''),
-  'Updated complaint status',
-  'complaint',
-  (string)$complaint['reference_no'],
-  "New status: {$status}"
-);
+$sms = ['status' => 'skipped', 'reason' => 'No SMS is sent when nothing changed.'];
+if ($changed && !$statusChanged) {
+  $sms = ['status' => 'skipped', 'reason' => 'No SMS is sent when the status is unchanged.'];
+} elseif ($statusChanged && $residentId <= 0) {
+  $sms = ['status' => 'skipped', 'reason' => 'No SMS was sent because this complaint has no linked resident.'];
+} elseif ($statusChanged && $residentId > 0 && ($status === 'resolved' || $status === 'investigating')) {
+  try {
+    if ($status === 'resolved') {
+      $noteText = $officialNote !== '' ? " Official note: {$officialNote}" : '';
+      $sms = notify_resident(
+        $residentId,
+        'complaint_resolved',
+        "Your complaint with reference number {$referenceNo} has been resolved by Barangay Hall of Sampaguita." . $noteText,
+        'complaints_enabled'
+      );
+    } else {
+      $firstName = 'there';
+      $nameStmt = $db->prepare('SELECT fname FROM residents WHERE id = ? LIMIT 1');
+      if ($nameStmt) {
+        $nameStmt->bind_param('i', $residentId);
+        if ($nameStmt->execute()) {
+          $nameResult = $nameStmt->get_result();
+          $nameRow = $nameResult ? $nameResult->fetch_assoc() : null;
+          $candidate = trim((string)($nameRow['fname'] ?? ''));
+          if ($candidate !== '') $firstName = $candidate;
+        }
+        $nameStmt->close();
+      }
+      $sms = notify_resident(
+        $residentId,
+        'complaint_investigating',
+        "Hi {$firstName}, your complaint {$referenceNo} is now being investigated by the barangay.",
+        'complaints_enabled'
+      );
+    }
+  } catch (Throwable $error) {
+    error_log('Complaint status SMS failed: ' . $error->getMessage());
+    $sms = ['status' => 'failed', 'reason' => 'The complaint was saved, but SMS could not be sent.'];
+  }
+} elseif ($statusChanged) {
+  $sms = ['status' => 'skipped', 'reason' => 'No SMS is sent for this status.'];
+}
 
-json_success(['message' => "Complaint status updated to {$status}."]);
+if (!$changed) {
+  $message = 'No changes were saved.';
+} elseif (!$statusChanged) {
+  $message = 'Complaint details saved.';
+} else {
+  $message = "Complaint status updated to {$status}.";
+}
+
+json_success([
+  'changed' => $changed,
+  'sms_status' => $sms['status'],
+  'sms_reason' => $sms['reason'],
+  'message' => $message
+]);
 ?>

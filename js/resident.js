@@ -172,6 +172,9 @@ function initRequestPricing() {
 
 let REQUESTS = [];
 let COMPLAINTS = [];
+const complaintResolutionHold = new Map();
+let complaintDetailSeq = 0;
+let complaintOpenGeneration = 0;
 let NOTIFICATIONS = [];
 let ANNOUNCEMENTS = [];
 let SERVICES = [];
@@ -453,6 +456,7 @@ function viewRequest(id) {
 
 function closeRequestModal() {
   document.getElementById('requestModal')?.classList.remove('show');
+  complaintOpenGeneration += 1;
 }
 
 function initRequestsTable() {
@@ -644,11 +648,440 @@ async function initComplaintComments(root, complaintId) {
   }
 }
 
-function viewComplaint(id) {
-  const c = COMPLAINTS.find(x => Number(x.id) === Number(id));
+// Keep in sync with the identical complaintResidentResponseText() in js/official.js.
+function complaintResidentResponseText(c) {
+  if (c.status === 'resolved') {
+    return c.residentConfirmation === 'confirmed'
+      ? 'Resident confirmed the resolution'
+      : 'Awaiting resident confirmation';
+  }
+  return c.residentConfirmation === 'reopened' ? 'Reopened by resident' : '';
+}
+
+// Keep in sync with the identical complaintResidentResponseTimesHtml() in js/official.js.
+function complaintResidentResponseTimesHtml(c) {
+  const parts = [];
+  if (c.residentConfirmation === 'confirmed' && c.confirmedAt) {
+    parts.push(`Confirmed ${escapeHtml(String(c.confirmedAt))}`);
+  }
+  if (c.residentConfirmation === 'reopened' && c.reopenedAt) {
+    parts.push(`Reopened ${escapeHtml(String(c.reopenedAt))}`);
+  }
+  if (!parts.length) return '';
+  return `<p data-response-times style="margin:4px 0 0;font-size:12px;color:var(--text-3)">${parts.join(' · ')}</p>`;
+}
+
+function complaintResolutionActionsHtml(c) {
+  if (!c || c.status !== 'resolved') return '';
+  const confirm = c.residentConfirmation === 'confirmed'
+    ? ''
+    : '<button type="button" data-confirm-resolution style="padding:8px 16px;background:var(--blue-mid);color:white;border:none;border-radius:7px;cursor:pointer">Confirm resolution</button>';
+  return `<div data-response-actions style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+      ${confirm}
+      <button type="button" data-reopen-toggle aria-expanded="false" style="padding:8px 16px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:7px;cursor:pointer">Still broken? Reopen complaint</button>
+      <div data-reopen-panel hidden style="flex-basis:100%">
+        <label style="display:block;font-size:12px;color:var(--text-2)">What is still broken? This reason is posted as a comment.
+          <textarea data-reopen-reason rows="3" style="display:block;box-sizing:border-box;width:100%;margin:6px 0;padding:8px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text)"></textarea>
+        </label>
+        <button type="button" data-reopen-submit style="padding:8px 16px;background:var(--blue-mid);color:white;border:none;border-radius:7px;cursor:pointer">Reopen complaint</button>
+      </div>
+    </div>`;
+}
+
+function complaintResidentResponseSectionHtml(c) {
+  const text = complaintResidentResponseText(c);
+  if (!text) return '';
+  return `<section data-resident-response data-complaint-id="${Number(c.id)}" style="margin:0 0 16px">
+    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Resident response</h4>
+    <p data-response-summary style="margin:0;font-size:13px;font-weight:600;color:var(--text)">${escapeHtml(text)}</p>
+    ${complaintResidentResponseTimesHtml(c)}
+    ${complaintResolutionActionsHtml(c)}
+    <p data-response-status role="status" style="font-size:12px;color:var(--text-2);margin:8px 0 0"></p>
+  </section>`;
+}
+
+function initResidentResolutionActions(section, complaint, box, options = {}) {
+  if (!section) return;
+  const confirmBtn = section.querySelector('[data-confirm-resolution]');
+  const toggleBtn = section.querySelector('[data-reopen-toggle]');
+  const statusEl = section.querySelector('[data-response-status]');
+  if (!confirmBtn && !toggleBtn) return;
+
+  const complaintId = Number(complaint.id);
+  let expectedResolutionId = Number(complaint.resolutionUpdateId || 0);
+  const modal = document.getElementById('requestModal');
+  let busy = false;
+  let recovering = false;
+  section.dataset.resolutionToken = String(expectedResolutionId);
+
+  const liveControls = () => ({
+    confirmBtn: section.querySelector('[data-confirm-resolution]'),
+    toggleBtn: section.querySelector('[data-reopen-toggle]'),
+    reasonEl: section.querySelector('[data-reopen-reason]'),
+    submitBtn: section.querySelector('[data-reopen-submit]')
+  });
+
+  const setBusy = (on) => {
+    busy = on;
+    const controls = liveControls();
+    [controls.confirmBtn, controls.toggleBtn, controls.submitBtn, controls.reasonEl].forEach(control => {
+      if (control && control.isConnected) control.disabled = on;
+    });
+  };
+
+  const stillThisComplaint = () => section.isConnected
+    && modal
+    && modal.classList.contains('show')
+    && Number(box.dataset.complaintId) === complaintId;
+
+  const markHold = (fallbackReason = '') => {
+    const existing = complaintResolutionHold.get(complaintId) || {};
+    let reopenReason = existing.reopenReason || fallbackReason || '';
+    let commentDraft = existing.commentDraft || '';
+    if (stillThisComplaint()) {
+      const liveReason = section.querySelector('[data-reopen-reason]');
+      if (liveReason) reopenReason = liveReason.value;
+      const commentEl = box.querySelector('[data-comment-form] textarea');
+      if (commentEl) commentDraft = commentEl.value;
+    }
+    complaintResolutionHold.set(complaintId, { reopenReason, commentDraft });
+  };
+
+  const hideRefresh = () => {
+    const button = section.querySelector('[data-refresh-resolution]');
+    if (button) button.hidden = true;
+  };
+
+  const ensureRefreshButton = () => {
+    let button = section.querySelector('[data-refresh-resolution]');
+    if (button) return button;
+    button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.refreshResolution = '';
+    button.textContent = 'Refresh status';
+    button.style.cssText = 'display:inline-block;margin:8px 8px 0 0;padding:8px 16px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:7px;cursor:pointer';
+    if (statusEl) statusEl.before(button);
+    else section.append(button);
+    button.addEventListener('click', () => {
+      recoverResolutionState().catch(() => {
+        if (!stillThisComplaint()) return;
+        button.disabled = false;
+        if (statusEl && statusEl.isConnected) {
+          statusEl.textContent = 'Status could not be refreshed. Use Refresh status to try again, or reload the page.';
+        }
+      });
+    });
+    return button;
+  };
+
+  const showRecovery = (message, remember = true) => {
+    if (remember) markHold();
+    setBusy(true);
+    if (!stillThisComplaint()) return;
+    const button = ensureRefreshButton();
+    button.hidden = false;
+    button.disabled = false;
+    if (statusEl && statusEl.isConnected) statusEl.textContent = message;
+  };
+
+  const paintResolution = (updated) => {
+    const statusNode = box.querySelector('[data-complaint-status]');
+    if (statusNode && statusNode.isConnected) statusNode.textContent = updated.status;
+    const summary = section.querySelector('[data-response-summary]');
+    if (summary) summary.textContent = complaintResidentResponseText(updated);
+    section.querySelector('[data-response-times]')?.remove();
+    const times = complaintResidentResponseTimesHtml(updated);
+    if (times && summary) summary.insertAdjacentHTML('afterend', times);
+    const previousReason = section.querySelector('[data-reopen-reason]')?.value || '';
+    const panelOpen = !!section.querySelector('[data-reopen-panel]')
+      && !section.querySelector('[data-reopen-panel]').hasAttribute('hidden');
+    const existing = section.querySelector('[data-response-actions]');
+    const html = complaintResolutionActionsHtml(updated);
+    if (!html) {
+      existing?.remove();
+    } else if (existing) {
+      existing.outerHTML = html;
+    } else {
+      const anchor = section.querySelector('[data-response-status]') || section.querySelector('[data-refresh-resolution]');
+      if (anchor) anchor.insertAdjacentHTML('beforebegin', html);
+      else section.insertAdjacentHTML('beforeend', html);
+    }
+    if (updated.status === 'resolved' && (previousReason || panelOpen)) {
+      const reasonInput = section.querySelector('[data-reopen-reason]');
+      if (reasonInput && previousReason) reasonInput.value = previousReason;
+      if (panelOpen || previousReason) {
+        section.querySelector('[data-reopen-panel]')?.removeAttribute('hidden');
+        section.querySelector('[data-reopen-toggle]')?.setAttribute('aria-expanded', 'true');
+      }
+    }
+    bindResolutionControls(section);
+    expectedResolutionId = Number(updated.resolutionUpdateId || 0);
+    section.dataset.resolutionToken = String(expectedResolutionId);
+  };
+
+  const enableFor = (updated) => {
+    hideRefresh();
+    complaintResolutionHold.delete(complaintId);
+    if (!updated || updated.status !== 'resolved') {
+      setBusy(true);
+      return;
+    }
+    setBusy(false);
+  };
+
+  async function refreshTimelineAndComments() {
+    const timeline = box.querySelector('#complaintTimeline');
+    if (timeline && timeline.isConnected) {
+      const timelineToken = `${Date.now()}-${Math.random()}`;
+      box.dataset.timelineToken = timelineToken;
+      const updates = await loadComplaintTimeline(complaintId);
+      if (!stillThisComplaint() || box.dataset.timelineToken !== timelineToken) return;
+      if (timeline.isConnected) timeline.innerHTML = renderTimelineHtml(updates);
+    }
+    const commentRoot = box.querySelector('[data-complaint-comments]');
+    if (!commentRoot || !commentRoot.isConnected || !stillThisComplaint()) return;
+    const textarea = commentRoot.querySelector('textarea[name="body"]');
+    const started = Date.now();
+    while (textarea && textarea.isConnected && textarea.disabled && Date.now() - started < 20000) {
+      await new Promise(resolve => setTimeout(resolve, 40));
+    }
+    if (!stillThisComplaint()) return;
+    const list = commentRoot.querySelector('[data-comment-list]');
+    if (list && list.isConnected) {
+      const comments = await loadComplaintComments(complaintId);
+      if (list.isConnected && (!textarea || textarea.isConnected) && stillThisComplaint()) {
+        list.innerHTML = renderComplaintCommentsHtml(comments);
+      }
+    }
+  }
+
+  async function recoverResolutionState() {
+    if (recovering) return;
+    recovering = true;
+    const button = ensureRefreshButton();
+    button.disabled = true;
+    if (stillThisComplaint() && statusEl) statusEl.textContent = 'Refreshing status…';
+    try {
+      await loadComplaints();
+      renderComplaintsList();
+    } catch {
+      recovering = false;
+      if (!stillThisComplaint()) return;
+      button.disabled = false;
+      if (statusEl && statusEl.isConnected) {
+        statusEl.textContent = 'Status could not be refreshed. Use Refresh status to try again, or reload the page.';
+      }
+      return;
+    }
+    if (!stillThisComplaint()) {
+      complaintResolutionHold.delete(complaintId);
+      recovering = false;
+      return;
+    }
+    const updated = COMPLAINTS.find(item => Number(item.id) === complaintId);
+    if (!updated) {
+      recovering = false;
+      button.disabled = false;
+      if (statusEl && statusEl.isConnected) {
+        statusEl.textContent = 'Status could not be refreshed. Use Refresh status to try again, or reload the page.';
+      }
+      return;
+    }
+    paintResolution(updated);
+    enableFor(updated);
+    if (statusEl && statusEl.isConnected) statusEl.textContent = 'Status refreshed.';
+    try {
+      await refreshTimelineAndComments();
+    } catch {
+      if (stillThisComplaint() && statusEl && statusEl.isConnected) {
+        statusEl.textContent = 'Status refreshed. Some details could not be loaded. Use Refresh status to try again, or reload the page.';
+        const retry = section.querySelector('[data-refresh-resolution]');
+        if (retry) {
+          retry.hidden = false;
+          retry.disabled = false;
+        }
+      }
+    }
+    recovering = false;
+  }
+
+  async function adoptFreshComplaint(message) {
+    await loadComplaints();
+    renderComplaintsList();
+    if (!stillThisComplaint()) {
+      complaintResolutionHold.delete(complaintId);
+      return;
+    }
+    const updated = COMPLAINTS.find(item => Number(item.id) === complaintId);
+    if (!updated) throw new Error('Complaint missing after refresh.');
+    paintResolution(updated);
+    enableFor(updated);
+    if (statusEl && statusEl.isConnected) statusEl.textContent = message;
+    try {
+      await refreshTimelineAndComments();
+    } catch {
+      if (stillThisComplaint() && statusEl && statusEl.isConnected) {
+        statusEl.textContent = `${message} Some details could not be loaded. Use Refresh status to try again.`;
+        const retry = ensureRefreshButton();
+        retry.hidden = false;
+        retry.disabled = false;
+      }
+    }
+  }
+
+  const runResolution = (kind) => {
+    sendResolution(kind).catch(() => {
+      showRecovery('The result could not be verified. Refresh status before trying again.');
+    });
+  };
+
+  function bindResolutionControls(root) {
+    const confirmControl = root.querySelector('[data-confirm-resolution]');
+    const toggleControl = root.querySelector('[data-reopen-toggle]');
+    const submitControl = root.querySelector('[data-reopen-submit]');
+    if (confirmControl && confirmControl.dataset.resolutionBound !== '1') {
+      confirmControl.dataset.resolutionBound = '1';
+      confirmControl.addEventListener('click', () => runResolution('confirm'));
+    }
+    if (toggleControl && toggleControl.dataset.resolutionBound !== '1') {
+      toggleControl.dataset.resolutionBound = '1';
+      toggleControl.addEventListener('click', () => {
+        if (busy) return;
+        const livePanel = section.querySelector('[data-reopen-panel]');
+        const liveToggle = section.querySelector('[data-reopen-toggle]');
+        const liveReason = section.querySelector('[data-reopen-reason]');
+        if (!livePanel || !liveToggle) return;
+        const willOpen = livePanel.hasAttribute('hidden');
+        if (willOpen) {
+          livePanel.removeAttribute('hidden');
+          liveToggle.setAttribute('aria-expanded', 'true');
+          liveReason?.focus();
+        } else {
+          livePanel.setAttribute('hidden', '');
+          liveToggle.setAttribute('aria-expanded', 'false');
+        }
+      });
+    }
+    if (submitControl && submitControl.dataset.resolutionBound !== '1') {
+      submitControl.dataset.resolutionBound = '1';
+      submitControl.addEventListener('click', () => runResolution('reopen'));
+    }
+  }
+
+  async function sendResolution(kind) {
+    if (busy || !section.isConnected) return;
+    const liveReason = section.querySelector('[data-reopen-reason]');
+    let reason = '';
+    if (kind === 'reopen') {
+      const trimmed = String(liveReason?.value ?? '').trim();
+      if (!trimmed || Array.from(trimmed).length > 2000) {
+        if (statusEl) statusEl.textContent = 'Enter a reason of 1–2,000 characters. It is posted as a comment.';
+        return;
+      }
+      reason = trimmed;
+    }
+    setBusy(true);
+    if (statusEl) statusEl.textContent = kind === 'confirm' ? 'Saving confirmation…' : 'Reopening complaint…';
+
+    let response;
+    try {
+      const payload = { complaint_id: complaintId, expected_resolution_id: expectedResolutionId };
+      if (kind === 'reopen') payload.reason = reason;
+      response = await fetch(`${API_BASE}/complaints/${kind === 'confirm' ? 'confirm_resolution' : 'reopen_complaint'}.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch {
+      if (stillThisComplaint() && statusEl) statusEl.textContent = 'Could not reach the server.';
+      setBusy(false);
+      return;
+    }
+
+    let data = null;
+    try {
+      const raw = await response.text();
+      if (raw.trim() !== '') data = JSON.parse(raw);
+    } catch {
+      showRecovery('The result could not be verified. Refresh status before trying again.');
+      return;
+    }
+    if (!data || typeof data !== 'object') {
+      showRecovery('The result could not be verified. Refresh status before trying again.');
+      return;
+    }
+    if (response.status === 409) {
+      try {
+        await adoptFreshComplaint(`${data.message || 'This complaint changed.'} Review the current status before responding.`);
+      } catch {
+        showRecovery('This complaint changed. Refresh status to load the current resolution before responding again.');
+      }
+      return;
+    }
+    if (!response.ok || !data.success) {
+      complaintResolutionHold.delete(complaintId);
+      hideRefresh();
+      if (stillThisComplaint() && statusEl) statusEl.textContent = data.message || 'Could not save the complaint.';
+      setBusy(false);
+      return;
+    }
+
+    const savedMessage = data.message || 'Saved.';
+    if (stillThisComplaint() && statusEl) statusEl.textContent = savedMessage;
+    try {
+      await adoptFreshComplaint(savedMessage);
+    } catch {
+      showRecovery('Saved. Refresh status to load the latest details.');
+    }
+  }
+
+  bindResolutionControls(section);
+  if (options.locked) {
+    showRecovery('Current status could not be loaded. Use Refresh status to try again, or reload the page.', false);
+  }
+}
+
+function restoreComplaintDrafts(box, draft) {
+  if (!draft) return;
+  const reasonInput = box.querySelector('[data-reopen-reason]');
+  if (reasonInput && draft.reopenReason) {
+    reasonInput.value = draft.reopenReason;
+    box.querySelector('[data-reopen-panel]')?.removeAttribute('hidden');
+    box.querySelector('[data-reopen-toggle]')?.setAttribute('aria-expanded', 'true');
+  }
+  const commentInput = box.querySelector('[data-comment-form] textarea');
+  if (commentInput && draft.commentDraft) commentInput.value = draft.commentDraft;
+}
+
+async function viewComplaint(id) {
+  const seq = ++complaintDetailSeq;
+  const openGeneration = complaintOpenGeneration;
+  const numericId = Number(id);
+  let lockActions = false;
+  let stagedDraft = null;
+  if (complaintResolutionHold.has(numericId)) {
+    stagedDraft = complaintResolutionHold.get(numericId);
+    try {
+      await loadComplaints();
+      if (seq !== complaintDetailSeq || openGeneration !== complaintOpenGeneration) return;
+      renderComplaintsList();
+      complaintResolutionHold.delete(numericId);
+    } catch {
+      if (seq !== complaintDetailSeq || openGeneration !== complaintOpenGeneration) return;
+      lockActions = true;
+    }
+  }
+  if (seq !== complaintDetailSeq || openGeneration !== complaintOpenGeneration) return;
+  const c = COMPLAINTS.find(x => Number(x.id) === numericId);
   if (!c) return;
   const box = document.getElementById('requestModalBox');
   if (!box) return;
+  box.dataset.complaintId = String(c.id);
+  const timelineToken = `${Date.now()}-${Math.random()}`;
+  const attachmentToken = `${Date.now()}-${Math.random()}`;
+  box.dataset.timelineToken = timelineToken;
+  box.dataset.attachmentToken = attachmentToken;
+  const modal = document.getElementById('requestModal');
 
   const rows = [
     ['Reference Number', c.ref],
@@ -656,7 +1089,7 @@ function viewComplaint(id) {
     ['Severity', c.severity, 'severity'],
     ['Location', c.loc],
     ['Description', c.description, 'multiline'],
-    ['Status', c.status],
+    ['Status', c.status, 'status'],
     ['Official Note', c.note],
     ['Date Filed', c.date]
   ];
@@ -670,13 +1103,18 @@ function viewComplaint(id) {
       ${rows.map(([label, value, mode]) => {
         const safe = mode === 'multiline'
           ? escapeHtml(value || 'Not provided').replace(/\r?\n/g, '<br>')
-          : (mode === 'severity' ? severityChip(value) : escapeHtml(value ?? 'Not provided'));
+          : (mode === 'severity'
+              ? severityChip(value)
+              : (mode === 'status'
+                  ? `<span data-complaint-status>${escapeHtml(value ?? 'Not provided')}</span>`
+                  : escapeHtml(value ?? 'Not provided')));
         return `<div style="display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:7px">
           <dt style="color:var(--text-3);font-size:11px;text-transform:uppercase;letter-spacing:.04em">${escapeHtml(label)}</dt>
           <dd style="margin:0;color:var(--text);font-size:13px;font-weight:600;overflow-wrap:anywhere">${safe}</dd>
         </div>`;
       }).join('')}
     </dl>
+    ${complaintResidentResponseSectionHtml(c)}
     <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Timeline</h4>
     <div id="complaintTimeline" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;padding:0 12px"></div>
     ${complaintCommentsSectionHtml()}
@@ -684,24 +1122,34 @@ function viewComplaint(id) {
     <div id="complaintAttachments" style="border:1px solid var(--border);border-radius:7px;padding:12px"></div>
     <button type="button" onclick="closeRequestModal()" style="padding:9px 24px;background:var(--blue-mid);color:white;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">Close</button>
   `;
-  initComplaintComments(box.querySelector('[data-complaint-comments]'), c.id);
+  if (seq !== complaintDetailSeq || openGeneration !== complaintOpenGeneration) return;
   document.getElementById('requestModal').classList.add('show');
+  initComplaintComments(box.querySelector('[data-complaint-comments]'), c.id);
+  initResidentResolutionActions(box.querySelector('[data-resident-response]'), c, box, { locked: lockActions });
+  restoreComplaintDrafts(box, stagedDraft);
+  const sameResidentDetail = () => modal
+    && modal.classList.contains('show')
+    && Number(box.dataset.complaintId) === Number(c.id);
   loadComplaintTimeline(c.id)
     .then(updates => {
-      const el = document.getElementById('complaintTimeline');
+      if (!sameResidentDetail() || box.dataset.timelineToken !== timelineToken) return;
+      const el = box.querySelector('#complaintTimeline');
       if (el) el.innerHTML = renderTimelineHtml(updates);
     })
     .catch(() => {
-      const el = document.getElementById('complaintTimeline');
+      if (!sameResidentDetail() || box.dataset.timelineToken !== timelineToken) return;
+      const el = box.querySelector('#complaintTimeline');
       if (el) el.textContent = 'Timeline unavailable.';
     });
   loadComplaintAttachments(c.id)
     .then(atts => {
-      const el = document.getElementById('complaintAttachments');
+      if (!sameResidentDetail() || box.dataset.attachmentToken !== attachmentToken) return;
+      const el = box.querySelector('#complaintAttachments');
       if (el) el.innerHTML = renderAttachmentsHtml(atts);
     })
     .catch(() => {
-      const el = document.getElementById('complaintAttachments');
+      if (!sameResidentDetail() || box.dataset.attachmentToken !== attachmentToken) return;
+      const el = box.querySelector('#complaintAttachments');
       if (el) el.textContent = 'Photos unavailable.';
     });
 }
@@ -909,7 +1357,11 @@ function mapComplaintRow(row) {
     date: row.date_filed,
     status: row.status,
     progress: statusToProgress[row.status] ?? 0,
-    note: row.official_note || 'Received. Awaiting assignment.'
+    note: row.official_note || 'Received. Awaiting assignment.',
+    residentConfirmation: row.resident_confirmation || null,
+    confirmedAt: row.confirmed_at || null,
+    reopenedAt: row.reopened_at || null,
+    resolutionUpdateId: Number(row.resolution_update_id || 0),
   };
 }
 

@@ -1443,12 +1443,74 @@ async function initComplaintComments(root, complaintId) {
   }
 }
 
+// Keep in sync with the identical complaintResidentResponseText() in js/resident.js.
+function complaintResidentResponseText(c) {
+  if (c.status === 'resolved') {
+    return c.residentConfirmation === 'confirmed'
+      ? 'Resident confirmed the resolution'
+      : 'Awaiting resident confirmation';
+  }
+  return c.residentConfirmation === 'reopened' ? 'Reopened by resident' : '';
+}
+
+// Keep in sync with the identical complaintResidentResponseTimesHtml() in js/resident.js.
+function complaintResidentResponseTimesHtml(c) {
+  const parts = [];
+  if (c.residentConfirmation === 'confirmed' && c.confirmedAt) {
+    parts.push(`Confirmed ${escapeHtml(String(c.confirmedAt))}`);
+  }
+  if (c.residentConfirmation === 'reopened' && c.reopenedAt) {
+    parts.push(`Reopened ${escapeHtml(String(c.reopenedAt))}`);
+  }
+  if (!parts.length) return '';
+  return `<p data-response-times style="margin:4px 0 0;font-size:12px;color:var(--text-3)">${parts.join(' · ')}</p>`;
+}
+
+function complaintResidentResponseSectionHtml(c) {
+  const text = complaintResidentResponseText(c);
+  if (!text) return '';
+  return `<section data-resident-response data-complaint-id="${Number(c.id)}" style="margin:0 0 16px">
+    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Resident response</h4>
+    <p data-response-summary style="margin:0;font-size:13px;font-weight:600;color:var(--text)">${escapeHtml(text)}</p>
+    ${complaintResidentResponseTimesHtml(c)}
+  </section>`;
+}
+
+function syncOpenComplaintResponse(id) {
+  const modal = document.getElementById('actionModal');
+  const box = document.getElementById('actionModalBox');
+  if (!modal || !box || !modal.classList.contains('show')) return;
+  if (Number(box.dataset.complaintId) !== Number(id)) return;
+  const updated = COMPLAINTS_ADMIN.find(item => Number(item.id) === Number(id));
+  if (!updated) return;
+  const statusNode = box.querySelector('[data-complaint-status]');
+  if (statusNode) statusNode.textContent = updated.status;
+  const html = complaintResidentResponseSectionHtml(updated);
+  const existing = box.querySelector('[data-resident-response]');
+  if (!html) {
+    if (existing) existing.remove();
+    return;
+  }
+  if (existing) {
+    existing.outerHTML = html;
+    return;
+  }
+  const timeline = box.querySelector('#complaintTimeline');
+  const heading = timeline?.previousElementSibling;
+  if (heading) heading.insertAdjacentHTML('beforebegin', html);
+}
+
 function viewComplaint(id) {
   const c = COMPLAINTS_ADMIN.find(x => Number(x.id) === Number(id));
   if (!c) return;
 
   const box = document.getElementById('actionModalBox');
   if (!box) return;
+  box.dataset.complaintId = String(c.id);
+  const timelineToken = `${Date.now()}-${Math.random()}`;
+  const attachmentToken = `${Date.now()}-${Math.random()}`;
+  box.dataset.timelineToken = timelineToken;
+  box.dataset.attachmentToken = attachmentToken;
   box.classList.add('detail-modal-box');
 
   const descriptionHtml = c.description
@@ -1465,7 +1527,7 @@ function viewComplaint(id) {
       ${profileDetailField('Category', c.cat)}
       ${profileDetailField('Location', c.loc)}
       ${profileDetailField('Date Filed', c.date)}
-      ${profileDetailField('Status', c.status)}
+      <div class="detail-field"><dt>Status</dt><dd data-complaint-status>${escapeHtml(c.status)}</dd></div>
       <div class="detail-field"><dt>Severity</dt><dd>${severityChip(c.severity)}</dd></div>
     </div>
     <div style="margin-bottom:16px;padding:12px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px">
@@ -1477,6 +1539,7 @@ function viewComplaint(id) {
       <div style="font-size:13px;color:var(--text-2);line-height:1.5">${escapeHtml(c.note)}</div>
     </div>` : ''}
     <p style="font-size:12px;color:var(--text-3);margin:0 0 16px">Status, severity, and notes can be updated using the controls on the complaint card. Close this view to make changes.</p>
+    ${complaintResidentResponseSectionHtml(c)}
     <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Timeline</h4>
     <div id="complaintTimeline" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;padding:0 12px"></div>
     ${complaintCommentsSectionHtml()}
@@ -1486,22 +1549,30 @@ function viewComplaint(id) {
   `;
   initComplaintComments(box.querySelector('[data-complaint-comments]'), c.id);
   document.getElementById('actionModal').classList.add('show');
+  const modal = document.getElementById('actionModal');
+  const sameOfficialDetail = () => modal
+    && modal.classList.contains('show')
+    && Number(box.dataset.complaintId) === Number(c.id);
   loadComplaintTimeline(c.id)
     .then(updates => {
-      const el = document.getElementById('complaintTimeline');
+      if (!sameOfficialDetail() || box.dataset.timelineToken !== timelineToken) return;
+      const el = box.querySelector('#complaintTimeline');
       if (el) el.innerHTML = renderTimelineHtml(updates);
     })
     .catch(() => {
-      const el = document.getElementById('complaintTimeline');
+      if (!sameOfficialDetail() || box.dataset.timelineToken !== timelineToken) return;
+      const el = box.querySelector('#complaintTimeline');
       if (el) el.textContent = 'Timeline unavailable.';
     });
   loadComplaintAttachments(c.id)
     .then(atts => {
-      const el = document.getElementById('complaintAttachments');
+      if (!sameOfficialDetail() || box.dataset.attachmentToken !== attachmentToken) return;
+      const el = box.querySelector('#complaintAttachments');
       if (el) el.innerHTML = renderAttachmentsHtml(atts);
     })
     .catch(() => {
-      const el = document.getElementById('complaintAttachments');
+      if (!sameOfficialDetail() || box.dataset.attachmentToken !== attachmentToken) return;
+      const el = box.querySelector('#complaintAttachments');
       if (el) el.textContent = 'Photos unavailable.';
     });
 }
@@ -1519,10 +1590,17 @@ async function updateComplaint(id) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, status, official_note: officialNote, severity })
     });
-    await loadComplaints();
-    await loadAuditLog();
-    await refreshDashboard();
-    showToastAdmin(resolving ? 'Complaint Resolved' : 'Complaint Updated', data.message || `${c.ref} status updated to "${status}".`);
+    const savedMessage = data.message || `${c.ref} status updated to "${status}".`;
+    try {
+      await loadComplaints();
+      await loadAuditLog();
+      await refreshDashboard();
+      syncOpenComplaintResponse(id);
+      const title = data.changed ? (resolving ? 'Complaint Resolved' : 'Complaint Updated') : 'Complaint Unchanged';
+      showToastAdmin(title, savedMessage);
+    } catch (refreshError) {
+      showToastAdmin('Complaint Saved', 'Saved. Refresh the page to see the latest details.');
+    }
   } catch (err) {
     showToastAdmin('Update Failed', err.message);
   }
@@ -1629,7 +1707,11 @@ function mapComplaintRow(row) {
     description: row.description || '',
     date: row.date_filed,
     status: row.status,
-    note: row.official_note || ''
+    note: row.official_note || '',
+    residentConfirmation: row.resident_confirmation || null,
+    confirmedAt: row.confirmed_at || null,
+    reopenedAt: row.reopened_at || null,
+    resolutionUpdateId: Number(row.resolution_update_id || 0),
   };
 }
 
