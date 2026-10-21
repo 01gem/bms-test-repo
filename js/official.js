@@ -28,6 +28,9 @@ let RESIDENTS = [];
 let OFFICIALS = [];
 let DOC_REQUESTS = [];
 let COMPLAINTS_ADMIN = [];
+let officialComplaintDetailSeq = 0;
+let complaintListSeq = 0;
+const complaintAssignmentHold = new Map();
 let ANNOUNCEMENTS_DATA = [];
 let SERVICES_DATA = [];
 let AUDIT_LOG = [];
@@ -1263,6 +1266,7 @@ function renderComplaintsAdmin(data) {
       <div class="ca-meta">
         <span><i class="fa-regular fa-calendar"></i> Filed: ${escapeAttribute(c.date)}</span>
         ${severityChip(c.severity)}
+        ${complaintCardSlaHtml(c)}
         ${c.note ? `<span><i class="fa-solid fa-comment"></i> ${escapeAttribute(c.note)}</span>` : ''}
       </div>
       ${c.description ? `<div style="margin:8px 0 12px;font-size:12.5px;color:var(--text-2);line-height:1.5">${escapeAttribute(c.description.length > 160 ? c.description.slice(0, 160).trimEnd() + '…' : c.description)}</div>` : ''}
@@ -1489,24 +1493,348 @@ function syncOpenComplaintResponse(id) {
   const existing = box.querySelector('[data-resident-response]');
   if (!html) {
     if (existing) existing.remove();
-    return;
-  }
-  if (existing) {
+  } else if (existing) {
     existing.outerHTML = html;
-    return;
+  } else {
+    const triage = box.querySelector('[data-complaint-triage]');
+    if (triage) {
+      triage.insertAdjacentHTML('beforebegin', html);
+    } else {
+      const timeline = box.querySelector('#complaintTimeline');
+      const heading = timeline?.previousElementSibling;
+      if (heading) heading.insertAdjacentHTML('beforebegin', html);
+    }
   }
-  const timeline = box.querySelector('#complaintTimeline');
-  const heading = timeline?.previousElementSibling;
-  if (heading) heading.insertAdjacentHTML('beforebegin', html);
+  syncOpenComplaintTriage(box, updated);
+}
+
+function complaintCardSlaHtml(c) {
+  const parts = [];
+  if (c.isOverdue) parts.push('<span data-sla-overdue style="color:#B91C1C;font-weight:700">Overdue</span>');
+  if (c.escalatedAt && c.status !== 'resolved') {
+    parts.push('<span data-sla-flagged style="color:#C2410C;font-weight:700">Flagged</span>');
+  }
+  return parts.join(' ');
+}
+
+// Keep in sync with the identical complaintIdOrNull() in js/resident.js.
+function complaintIdOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+// Keep in sync with the identical complaintAssigneeLabel() in js/resident.js.
+function complaintAssigneeLabel(c) {
+  if (c.assignedOfficialId === null || c.assignedOfficialId === undefined) return 'Unassigned';
+  const name = String(c.assignedOfficialName || '').trim();
+  return name !== '' ? name : 'Assigned official';
+}
+
+// Keep in sync with the identical complaintTriageStateText() in js/resident.js.
+function complaintTriageStateText(c) {
+  if (c.status === 'resolved') {
+    return c.slaDueAt
+      ? 'Resolved. The response target is kept for history.'
+      : 'Resolved. No response target was recorded.';
+  }
+  if (c.isOverdue) return 'Overdue';
+  if (c.slaDueAt) return 'Within the response target';
+  return 'No response target is set';
+}
+
+// Keep in sync with the identical complaintTriageSummaryHtml() in js/resident.js.
+function complaintTriageSummaryHtml(c) {
+  const assignee = escapeHtml(complaintAssigneeLabel(c));
+  const state = escapeHtml(complaintTriageStateText(c));
+  const target = c.slaDueAt
+    ? `<p data-triage-target style="margin:4px 0 0;font-size:12px;color:var(--text-3)">Response target ${escapeHtml(String(c.slaDueAt))}</p>`
+    : '';
+  let flagged = '';
+  if (c.escalatedAt && c.status === 'resolved') {
+    flagged = `<p data-triage-flagged style="margin:4px 0 0;font-size:12px;color:var(--text-3)">Previously flagged ${escapeHtml(String(c.escalatedAt))}</p>`;
+  } else if (c.escalatedAt) {
+    flagged = `<p data-triage-flagged style="margin:4px 0 0;font-size:12px;color:var(--text-3)">Flagged ${escapeHtml(String(c.escalatedAt))}</p>`;
+  }
+  return `<p data-triage-assignee style="margin:0;font-size:13px;font-weight:600;color:var(--text)">${assignee}</p>${target}<p data-triage-state style="margin:4px 0 0;font-size:12.5px;color:var(--text-2)">${state}</p>${flagged}`;
+}
+
+function complaintInactiveAssigneeHintHtml(c) {
+  if (!window.IS_OFFICIAL_ADMIN) return '';
+  if (c.assignedOfficialId == null || c.assignedOfficialStatus !== 'inactive') return '';
+  if (c.status !== 'open' && c.status !== 'investigating') return '';
+  return `<p data-inactive-assignee-hint style="margin:4px 0 0;font-size:12.5px;color:var(--text-2)">This assignee is inactive. Choose an active official or Unassigned. The current assignment stays until you save.</p>`;
+}
+
+function complaintTriageSectionHtml(c) {
+  const controls = window.IS_OFFICIAL_ADMIN ? `<div data-assignment-controls style="margin-top:10px">
+      <label style="display:block;font-size:12px;color:var(--text-2)">Assignee
+        <select data-assignee-select disabled style="display:block;box-sizing:border-box;width:100%;margin:6px 0;padding:8px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text)">
+          <option value="">Loading officials…</option>
+        </select>
+      </label>
+      <button type="button" data-save-assignment disabled style="padding:8px 16px;background:var(--blue-mid);color:white;border:none;border-radius:7px;cursor:pointer">Save assignment</button>
+      <button type="button" data-refresh-assignment hidden style="margin-left:8px;padding:8px 16px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:7px;cursor:pointer">Refresh assignment status</button>
+      <p data-assignment-status role="status" style="font-size:12px;color:var(--text-2);margin:8px 0 0"></p>
+    </div>` : '';
+  return `<section data-complaint-triage data-complaint-id="${Number(c.id)}" style="margin:0 0 16px">
+    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Assignment</h4>
+    <div data-triage-summary>${complaintTriageSummaryHtml(c)}</div>
+    ${complaintInactiveAssigneeHintHtml(c)}
+    ${controls}
+  </section>`;
+}
+
+function syncOpenComplaintTriage(box, complaint) {
+  const summary = box.querySelector('[data-triage-summary]');
+  if (summary) summary.innerHTML = complaintTriageSummaryHtml(complaint);
+  const section = box.querySelector('[data-complaint-triage]');
+  if (!section) return;
+  const existingHint = section.querySelector('[data-inactive-assignee-hint]');
+  const hintHtml = complaintInactiveAssigneeHintHtml(complaint);
+  if (existingHint) {
+    if (hintHtml) existingHint.outerHTML = hintHtml;
+    else existingHint.remove();
+  } else if (hintHtml && summary) {
+    summary.insertAdjacentHTML('afterend', hintHtml);
+  }
+  const select = section.querySelector('[data-assignee-select]');
+  const save = section.querySelector('[data-save-assignment]');
+  if (!select || !save) return;
+  const held = complaintAssignmentHold.has(Number(complaint.id));
+  const busy = section.dataset.assignmentBusy === '1';
+  const unresolved = complaint.status === 'open' || complaint.status === 'investigating';
+  const locked = !unresolved || held || busy || section.dataset.assignmentReady !== '1';
+  select.disabled = locked;
+  save.disabled = locked;
+}
+
+function assignmentStillOpen(box, complaintId, seq) {
+  const modal = document.getElementById('actionModal');
+  return !!(modal
+    && modal.classList.contains('show')
+    && box.isConnected
+    && Number(box.dataset.complaintId) === Number(complaintId)
+    && box.dataset.detailSeq === String(seq));
+}
+
+function assignmentOptionsHtml(complaint, candidates) {
+  const options = ['<option value="">Unassigned</option>'];
+  const seen = new Set();
+  (candidates || []).forEach(official => {
+    const id = Number(official.dbId);
+    if (!Number.isInteger(id) || id <= 0 || official.status !== 'active' || seen.has(id)) return;
+    seen.add(id);
+    const name = String(official.name || '').trim() || `Official ${id}`;
+    options.push(`<option value="${id}">${escapeHtml(name)}</option>`);
+  });
+  const currentId = complaint.assignedOfficialId;
+  if (currentId != null && !seen.has(Number(currentId))) {
+    const name = String(complaint.assignedOfficialName || '').trim() || `Official ${currentId}`;
+    const suffix = complaint.assignedOfficialStatus === 'inactive' ? ' (inactive — current)' : ' (current)';
+    options.push(`<option value="${Number(currentId)}">${escapeHtml(name + suffix)}</option>`);
+  }
+  return options.join('');
+}
+
+function showAssignmentRefresh(section, message) {
+  const select = section.querySelector('[data-assignee-select]');
+  const save = section.querySelector('[data-save-assignment]');
+  const refresh = section.querySelector('[data-refresh-assignment]');
+  const status = section.querySelector('[data-assignment-status]');
+  section.dataset.assignmentReady = '0';
+  if (select) select.disabled = true;
+  if (save) save.disabled = true;
+  if (refresh) {
+    refresh.hidden = false;
+    refresh.disabled = false;
+  }
+  if (status && message) status.textContent = message;
+}
+
+function applyAssignmentControls(section, complaint, candidates) {
+  const summary = section.querySelector('[data-triage-summary]');
+  if (summary) summary.innerHTML = complaintTriageSummaryHtml(complaint);
+  const existingHint = section.querySelector('[data-inactive-assignee-hint]');
+  const hintHtml = complaintInactiveAssigneeHintHtml(complaint);
+  if (existingHint) {
+    if (hintHtml) existingHint.outerHTML = hintHtml;
+    else existingHint.remove();
+  } else if (hintHtml && summary) {
+    summary.insertAdjacentHTML('afterend', hintHtml);
+  }
+  const select = section.querySelector('[data-assignee-select]');
+  const save = section.querySelector('[data-save-assignment]');
+  const refresh = section.querySelector('[data-refresh-assignment]');
+  if (!select || !save) return false;
+  select.innerHTML = assignmentOptionsHtml(complaint, candidates);
+  const expected = complaint.assignedOfficialId == null ? '' : String(complaint.assignedOfficialId);
+  select.value = expected;
+  if (select.value !== expected) {
+    showAssignmentRefresh(section, 'Assignment status could not be loaded. Use Refresh assignment status to try again.');
+    return false;
+  }
+  section.dataset.expectedAssignee = expected;
+  const unresolved = complaint.status === 'open' || complaint.status === 'investigating';
+  section.dataset.assignmentReady = unresolved ? '1' : '0';
+  select.disabled = !unresolved;
+  save.disabled = !unresolved;
+  if (refresh) refresh.hidden = true;
+  return true;
+}
+
+async function loadAssigneeCandidates() {
+  const data = await fetchJson(`${API_BASE}/officials/list.php`);
+  if (!Array.isArray(data.officials)) throw new Error('Official directory was unavailable.');
+  return data.officials.map(mapOfficialRow);
+}
+
+async function reloadAssignment(box, complaintId, seq, renderList) {
+  const section = box.querySelector('[data-complaint-triage]');
+  if (!section) return false;
+  const [candidates, rows] = await Promise.all([
+    loadAssigneeCandidates(),
+    loadComplaints({ render: renderList })
+  ]);
+  if (!assignmentStillOpen(box, complaintId, seq)) return false;
+  if (!rows) return false;
+  const updated = rows.find(item => Number(item.id) === Number(complaintId));
+  if (!updated) return false;
+  complaintAssignmentHold.delete(Number(complaintId));
+  return applyAssignmentControls(section, updated, candidates);
+}
+
+function initComplaintAssignment(box, complaint, seq) {
+  const section = box.querySelector('[data-assignment-controls]');
+  if (!section || !window.IS_OFFICIAL_ADMIN) return;
+  const triage = section.closest('[data-complaint-triage]');
+  const select = section.querySelector('[data-assignee-select]');
+  const save = section.querySelector('[data-save-assignment]');
+  const refresh = section.querySelector('[data-refresh-assignment]');
+  const status = section.querySelector('[data-assignment-status]');
+  const complaintId = Number(complaint.id);
+  if (complaintAssignmentHold.has(complaintId) && status) {
+    status.textContent = 'Assignment status needs a refresh before it can be changed.';
+    if (refresh) refresh.hidden = false;
+  }
+
+  const recover = async (renderList) => {
+    try {
+      const ok = await reloadAssignment(box, complaintId, seq, renderList);
+      if (!assignmentStillOpen(box, complaintId, seq)) return ok;
+      if (!ok) {
+        showAssignmentRefresh(triage, 'Assignment status could not be loaded. Use Refresh assignment status to try again.');
+      }
+      return ok;
+    } catch (error) {
+      if (!assignmentStillOpen(box, complaintId, seq)) return false;
+      showAssignmentRefresh(triage, 'Assignment status could not be loaded. Use Refresh assignment status to try again.');
+      return false;
+    }
+  };
+
+  refresh?.addEventListener('click', () => {
+    if (triage.dataset.assignmentBusy === '1') return;
+    triage.dataset.assignmentBusy = '1';
+    refresh.disabled = true;
+    if (status) status.textContent = 'Refreshing assignment status…';
+    recover(true).finally(() => {
+      if (triage.isConnected) triage.dataset.assignmentBusy = '0';
+    });
+  });
+
+  save?.addEventListener('click', () => {
+    if (triage.dataset.assignmentBusy === '1' || triage.dataset.assignmentReady !== '1') return;
+    if (!('expectedAssignee' in triage.dataset)) return;
+    const officialId = select.value === '' ? null : Number(select.value);
+    if (officialId !== null && (!Number.isInteger(officialId) || officialId <= 0)) return;
+    const expectedId = triage.dataset.expectedAssignee === '' ? null : Number(triage.dataset.expectedAssignee);
+    triage.dataset.assignmentBusy = '1';
+    select.disabled = true;
+    save.disabled = true;
+    if (status) status.textContent = 'Saving assignment…';
+
+    const finishBusy = () => {
+      if (triage.isConnected) triage.dataset.assignmentBusy = '0';
+    };
+    const hold = (message) => {
+      complaintAssignmentHold.set(complaintId, true);
+      if (!assignmentStillOpen(box, complaintId, seq)) return;
+      showAssignmentRefresh(triage, message);
+    };
+
+    (async () => {
+      let response;
+      try {
+        response = await fetch(`${API_BASE}/complaints/assign.php`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            complaint_id: complaintId,
+            official_id: officialId,
+            expected_assigned_official_id: expectedId
+          })
+        });
+      } catch (error) {
+        hold('The result could not be verified. Use Refresh assignment status before trying again.');
+        return;
+      }
+      let data = null;
+      try {
+        const raw = await response.text();
+        if (raw.trim() !== '') data = JSON.parse(raw);
+      } catch (error) {
+        hold('The result could not be verified. Use Refresh assignment status before trying again.');
+        return;
+      }
+      if (!assignmentStillOpen(box, complaintId, seq)) return;
+      if (!data || typeof data !== 'object') {
+        hold('The result could not be verified. Use Refresh assignment status before trying again.');
+        return;
+      }
+      if (response.status === 409) {
+        const review = `${data.message || 'This assignment changed.'} Review the current assignee before saving again.`;
+        if (status) status.textContent = review;
+        complaintAssignmentHold.set(complaintId, true);
+        const ok = await recover(true);
+        if (!assignmentStillOpen(box, complaintId, seq)) return;
+        if (ok && status) status.textContent = review;
+        if (!ok) hold(`${review} Use Refresh assignment status to load the current assignee.`);
+        return;
+      }
+      if (!response.ok || !data.success) {
+        if (status) status.textContent = data.message || 'Could not save the assignment.';
+        const unresolved = select.dataset && triage.dataset.assignmentReady === '1';
+        select.disabled = !unresolved;
+        save.disabled = !unresolved;
+        return;
+      }
+      const savedMessage = data.message || (data.changed ? 'Complaint assignment saved.' : 'Assignment unchanged.');
+      if (status) status.textContent = savedMessage;
+      complaintAssignmentHold.set(complaintId, true);
+      const ok = await recover(true);
+      if (!assignmentStillOpen(box, complaintId, seq)) return;
+      if (ok) {
+        if (status) status.textContent = savedMessage;
+        return;
+      }
+      hold(`${savedMessage} Use Refresh assignment status to load the latest assignee.`);
+    })().finally(finishBusy);
+  });
+
+  recover(false);
 }
 
 function viewComplaint(id) {
+  const seq = ++officialComplaintDetailSeq;
   const c = COMPLAINTS_ADMIN.find(x => Number(x.id) === Number(id));
   if (!c) return;
 
   const box = document.getElementById('actionModalBox');
   if (!box) return;
   box.dataset.complaintId = String(c.id);
+  box.dataset.detailSeq = String(seq);
   const timelineToken = `${Date.now()}-${Math.random()}`;
   const attachmentToken = `${Date.now()}-${Math.random()}`;
   box.dataset.timelineToken = timelineToken;
@@ -1540,6 +1868,7 @@ function viewComplaint(id) {
     </div>` : ''}
     <p style="font-size:12px;color:var(--text-3);margin:0 0 16px">Status, severity, and notes can be updated using the controls on the complaint card. Close this view to make changes.</p>
     ${complaintResidentResponseSectionHtml(c)}
+    ${complaintTriageSectionHtml(c)}
     <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Timeline</h4>
     <div id="complaintTimeline" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;padding:0 12px"></div>
     ${complaintCommentsSectionHtml()}
@@ -1549,6 +1878,7 @@ function viewComplaint(id) {
   `;
   initComplaintComments(box.querySelector('[data-complaint-comments]'), c.id);
   document.getElementById('actionModal').classList.add('show');
+  initComplaintAssignment(box, c, seq);
   const modal = document.getElementById('actionModal');
   const sameOfficialDetail = () => modal
     && modal.classList.contains('show')
@@ -1712,6 +2042,16 @@ function mapComplaintRow(row) {
     confirmedAt: row.confirmed_at || null,
     reopenedAt: row.reopened_at || null,
     resolutionUpdateId: Number(row.resolution_update_id || 0),
+    assignedOfficialId: complaintIdOrNull(row.assigned_official_id),
+    assignedOfficialName: row.assigned_official_name == null || String(row.assigned_official_name).trim() === ''
+      ? null
+      : String(row.assigned_official_name).trim(),
+    assignedOfficialStatus: row.assigned_official_status === 'active' || row.assigned_official_status === 'inactive'
+      ? row.assigned_official_status
+      : null,
+    slaDueAt: row.sla_due_at ? String(row.sla_due_at) : null,
+    escalatedAt: row.escalated_at ? String(row.escalated_at) : null,
+    isOverdue: Number(row.is_overdue) === 1,
   };
 }
 
@@ -2282,10 +2622,23 @@ async function loadRequests() {
   refreshDocRequestsTable();
 }
 
-async function loadComplaints() {
+async function loadComplaints(options = {}) {
+  const seq = ++complaintListSeq;
+  try {
+    await fetchJson(`${API_BASE}/complaints/check_sla.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+  } catch (error) {
+    // A failed escalation check must not block complaint reads.
+  }
   const data = await fetchJson(`${API_BASE}/complaints/list.php`);
-  COMPLAINTS_ADMIN = (data.complaints || []).map(mapComplaintRow);
-  refreshComplaintsAdmin();
+  const rows = (data.complaints || []).map(mapComplaintRow);
+  if (seq !== complaintListSeq) return null;
+  COMPLAINTS_ADMIN = rows;
+  if (options.render !== false) refreshComplaintsAdmin();
+  return rows;
 }
 
 async function refreshDashboard() {
@@ -3398,10 +3751,7 @@ async function pollOfficialUpdates() {
     );
   }
   if (activeSection === 'tab-complaints' || activeSection === 'tab-dashboard') {
-    fetches.push(
-      fetchJson(`${API_BASE}/complaints/list.php`)
-        .then(d => { COMPLAINTS_ADMIN = (d.complaints || []).map(mapComplaintRow); })
-    );
+    fetches.push(loadComplaints());
   }
   if (!fetches.length) { scheduleNextPoll(); return; }
 

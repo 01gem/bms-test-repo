@@ -169,14 +169,126 @@ function sms_log_write(
   string $to,
   string $status,
   ?string $reason,
-  ?string $messageId = null
+  ?string $messageId = null,
+  ?int $officialId = null
 ): void {
-  $stmt = $db->prepare(
-    'INSERT INTO sms_log (resident_id, official_id, endpoint, to_number, status, reason, http_message_id)
-     VALUES (?, NULL, ?, ?, ?, ?, ?)'
-  );
-  if (!$stmt) { error_log('sms_log prepare failed: ' . $db->error); return; }
-  $stmt->bind_param('isssss', $residentId, $endpoint, $to, $status, $reason, $messageId);
-  if (!$stmt->execute()) error_log('sms_log execute failed: ' . $stmt->error);
-  $stmt->close();
+  $stmt = null;
+  try {
+    $stmt = $db->prepare(
+      'INSERT INTO sms_log (resident_id, official_id, endpoint, to_number, status, reason, http_message_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)'
+    );
+    if (!$stmt) {
+      error_log('sms_log prepare failed: ' . $db->error);
+      return;
+    }
+    $stmt->bind_param('iisssss', $residentId, $officialId, $endpoint, $to, $status, $reason, $messageId);
+    if (!$stmt->execute()) error_log('sms_log execute failed: ' . $stmt->error);
+  } catch (Throwable $error) {
+    error_log('sms_log write failed: ' . $error->getMessage());
+  } finally {
+    if ($stmt instanceof mysqli_stmt) $stmt->close();
+  }
+}
+
+/**
+ * Operational SMS to one official. No preference table in this build.
+ * Same status/reason shape as notify_resident. Never throws.
+ * Does not use db_query_all(): a lookup failure must not exit an already-saved caller.
+ *
+ * @return array{status:string,reason:string}
+ */
+function notify_official(int $officialId, string $endpoint, string $body): array {
+  try {
+    $db = get_db();
+    $apiKey = getenv('HTTPSMS_API_KEY') ?: '';
+    $fromNumber = getenv('HTTPSMS_FROM_NUMBER') ?: '';
+    if ($apiKey === '' || $fromNumber === '') {
+      sms_log_write($db, null, $endpoint, '', 'skipped', 'sms_not_configured', null, $officialId);
+      return ['status' => 'skipped', 'reason' => 'SMS is not configured on this server.'];
+    }
+
+    $stmt = $db->prepare('SELECT status, contact FROM barangay_officials WHERE id = ? LIMIT 1');
+    if (!$stmt) {
+      error_log('notify_official lookup prepare failed: ' . $db->error);
+      sms_log_write($db, null, $endpoint, '', 'skipped', 'official_lookup_failed', null, $officialId);
+      return ['status' => 'skipped', 'reason' => 'Official lookup failed.'];
+    }
+    $stmt->bind_param('i', $officialId);
+    if (!$stmt->execute()) {
+      error_log('notify_official lookup execute failed: ' . $stmt->error);
+      $stmt->close();
+      sms_log_write($db, null, $endpoint, '', 'skipped', 'official_lookup_failed', null, $officialId);
+      return ['status' => 'skipped', 'reason' => 'Official lookup failed.'];
+    }
+    $result = $stmt->get_result();
+    $official = $result ? $result->fetch_assoc() : null;
+    $stmt->close();
+    if (!$result) {
+      sms_log_write($db, null, $endpoint, '', 'skipped', 'official_lookup_failed', null, $officialId);
+      return ['status' => 'skipped', 'reason' => 'Official lookup failed.'];
+    }
+    if (!$official || (string)($official['status'] ?? '') !== 'active') {
+      sms_log_write($db, null, $endpoint, '', 'skipped', 'official_unavailable', null, $officialId);
+      return ['status' => 'skipped', 'reason' => 'Official is unavailable.'];
+    }
+
+    $toRaw = trim((string)($official['contact'] ?? ''));
+    if ($toRaw === '') {
+      sms_log_write($db, null, $endpoint, '', 'skipped', 'no_contact', null, $officialId);
+      return ['status' => 'skipped', 'reason' => 'Official has no contact number.'];
+    }
+    $to = normalize_ph_phone($toRaw);
+    if ($to === null) {
+      sms_log_write($db, null, $endpoint, $toRaw, 'skipped', 'invalid_contact', null, $officialId);
+      return ['status' => 'skipped', 'reason' => 'Official contact number is invalid.'];
+    }
+
+    $cap = $db->prepare(
+      "SELECT COUNT(*) AS c FROM sms_log
+        WHERE official_id = ? AND endpoint = ? AND status = 'sent'
+          AND resident_id IS NULL
+          AND created_at > NOW() - INTERVAL 1 DAY"
+    );
+    if (!$cap) {
+      error_log('notify_official cap prepare failed: ' . $db->error);
+      sms_log_write($db, null, $endpoint, $to, 'skipped', 'cap_lookup_failed', null, $officialId);
+      return ['status' => 'skipped', 'reason' => 'SMS cap lookup failed.'];
+    }
+    $cap->bind_param('is', $officialId, $endpoint);
+    if (!$cap->execute()) {
+      error_log('notify_official cap execute failed: ' . $cap->error);
+      $cap->close();
+      sms_log_write($db, null, $endpoint, $to, 'skipped', 'cap_lookup_failed', null, $officialId);
+      return ['status' => 'skipped', 'reason' => 'SMS cap lookup failed.'];
+    }
+    $capResult = $cap->get_result();
+    $capRow = $capResult ? $capResult->fetch_assoc() : null;
+    $cap->close();
+    if (!$capResult || !$capRow) {
+      sms_log_write($db, null, $endpoint, $to, 'skipped', 'cap_lookup_failed', null, $officialId);
+      return ['status' => 'skipped', 'reason' => 'SMS cap lookup failed.'];
+    }
+    if ((int)$capRow['c'] >= 5) {
+      sms_log_write($db, null, $endpoint, $to, 'skipped', 'daily_cap', null, $officialId);
+      return ['status' => 'skipped', 'reason' => 'Daily SMS limit reached for this official and event type.'];
+    }
+
+    $sent = send_sms($to, $body);
+    if (!empty($sent['ok'])) {
+      sms_log_write($db, null, $endpoint, $to, 'sent', null, $sent['message_id'] ?? null, $officialId);
+      return ['status' => 'sent', 'reason' => 'SMS sent.'];
+    }
+    $errorText = (string)($sent['error'] ?? 'unknown');
+    sms_log_write($db, null, $endpoint, $to, 'failed', $errorText, null, $officialId);
+    return ['status' => 'failed', 'reason' => 'SMS send failed: ' . $errorText];
+  } catch (Throwable $error) {
+    error_log('notify_official failed: ' . $error->getMessage());
+    try {
+      sms_log_write(get_db(), null, $endpoint, '', 'failed', 'notify_official_failed', null, $officialId);
+    } catch (Throwable $logError) {
+      error_log('notify_official log failed: ' . $logError->getMessage());
+    }
+    return ['status' => 'failed', 'reason' => 'SMS could not be sent.'];
+  }
 }

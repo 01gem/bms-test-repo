@@ -671,6 +671,68 @@ function complaintResidentResponseTimesHtml(c) {
   return `<p data-response-times style="margin:4px 0 0;font-size:12px;color:var(--text-3)">${parts.join(' · ')}</p>`;
 }
 
+// Keep in sync with the identical complaintIdOrNull() in js/official.js.
+function complaintIdOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+// Keep in sync with the identical complaintAssigneeLabel() in js/official.js.
+function complaintAssigneeLabel(c) {
+  if (c.assignedOfficialId === null || c.assignedOfficialId === undefined) return 'Unassigned';
+  const name = String(c.assignedOfficialName || '').trim();
+  return name !== '' ? name : 'Assigned official';
+}
+
+// Keep in sync with the identical complaintTriageStateText() in js/official.js.
+function complaintTriageStateText(c) {
+  if (c.status === 'resolved') {
+    return c.slaDueAt
+      ? 'Resolved. The response target is kept for history.'
+      : 'Resolved. No response target was recorded.';
+  }
+  if (c.isOverdue) return 'Overdue';
+  if (c.slaDueAt) return 'Within the response target';
+  return 'No response target is set';
+}
+
+// Keep in sync with the identical complaintTriageSummaryHtml() in js/official.js.
+function complaintTriageSummaryHtml(c) {
+  const assignee = escapeHtml(complaintAssigneeLabel(c));
+  const state = escapeHtml(complaintTriageStateText(c));
+  const target = c.slaDueAt
+    ? `<p data-triage-target style="margin:4px 0 0;font-size:12px;color:var(--text-3)">Response target ${escapeHtml(String(c.slaDueAt))}</p>`
+    : '';
+  let flagged = '';
+  if (c.escalatedAt && c.status === 'resolved') {
+    flagged = `<p data-triage-flagged style="margin:4px 0 0;font-size:12px;color:var(--text-3)">Previously flagged ${escapeHtml(String(c.escalatedAt))}</p>`;
+  } else if (c.escalatedAt) {
+    flagged = `<p data-triage-flagged style="margin:4px 0 0;font-size:12px;color:var(--text-3)">Flagged ${escapeHtml(String(c.escalatedAt))}</p>`;
+  }
+  return `<p data-triage-assignee style="margin:0;font-size:13px;font-weight:600;color:var(--text)">${assignee}</p>${target}<p data-triage-state style="margin:4px 0 0;font-size:12.5px;color:var(--text-2)">${state}</p>${flagged}`;
+}
+
+function complaintTriageSectionHtml(c) {
+  return `<section data-complaint-triage data-complaint-id="${Number(c.id)}" style="margin:0 0 16px">
+    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Assignment</h4>
+    <div data-triage-summary>${complaintTriageSummaryHtml(c)}</div>
+  </section>`;
+}
+
+function paintComplaintTriageSummary(root, complaint) {
+  if (!root || !complaint) return;
+  const summary = root.querySelector('[data-triage-summary]');
+  if (summary) {
+    summary.innerHTML = complaintTriageSummaryHtml(complaint);
+    return;
+  }
+  const timeline = root.querySelector('#complaintTimeline');
+  const heading = timeline ? timeline.previousElementSibling : null;
+  if (heading) heading.insertAdjacentHTML('beforebegin', complaintTriageSectionHtml(complaint));
+}
+
 function complaintResolutionActionsHtml(c) {
   if (!c || c.status !== 'resolved') return '';
   const confirm = c.residentConfirmation === 'confirmed'
@@ -785,6 +847,7 @@ function initResidentResolutionActions(section, complaint, box, options = {}) {
   };
 
   const paintResolution = (updated) => {
+    paintComplaintTriageSummary(box, updated);
     const statusNode = box.querySelector('[data-complaint-status]');
     if (statusNode && statusNode.isConnected) statusNode.textContent = updated.status;
     const summary = section.querySelector('[data-response-summary]');
@@ -1115,6 +1178,7 @@ async function viewComplaint(id) {
       }).join('')}
     </dl>
     ${complaintResidentResponseSectionHtml(c)}
+    ${complaintTriageSectionHtml(c)}
     <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Timeline</h4>
     <div id="complaintTimeline" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;padding:0 12px"></div>
     ${complaintCommentsSectionHtml()}
@@ -1362,6 +1426,16 @@ function mapComplaintRow(row) {
     confirmedAt: row.confirmed_at || null,
     reopenedAt: row.reopened_at || null,
     resolutionUpdateId: Number(row.resolution_update_id || 0),
+    assignedOfficialId: complaintIdOrNull(row.assigned_official_id),
+    assignedOfficialName: row.assigned_official_name == null || String(row.assigned_official_name).trim() === ''
+      ? null
+      : String(row.assigned_official_name).trim(),
+    assignedOfficialStatus: row.assigned_official_status === 'active' || row.assigned_official_status === 'inactive'
+      ? row.assigned_official_status
+      : null,
+    slaDueAt: row.sla_due_at ? String(row.sla_due_at) : null,
+    escalatedAt: row.escalated_at ? String(row.escalated_at) : null,
+    isOverdue: Number(row.is_overdue) === 1,
   };
 }
 

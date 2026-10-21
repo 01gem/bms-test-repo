@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../common.php';
+require_once __DIR__ . '/_sla.php';
 session_start();
 $isOfficial = !empty($_SESSION['official_id']);
 $residentId = (int)($_SESSION['resident_id'] ?? 0);
@@ -27,7 +28,8 @@ $changed = false;
 try {
   if (!$db->begin_transaction()) throw new RuntimeException($db->error);
   $stmt = $db->prepare(
-    'SELECT id, resident_id, reference_no, status, resident_confirmation FROM complaints WHERE id = ? FOR UPDATE'
+    'SELECT id, resident_id, reference_no, status, resident_confirmation, severity, assigned_official_id
+       FROM complaints WHERE id = ? FOR UPDATE'
   );
   if (!$stmt) throw new RuntimeException($db->error);
   $stmt->bind_param('i', $complaintId);
@@ -58,12 +60,17 @@ try {
     throw new DomainException('Only a resolved complaint can be reopened.', 409);
   }
   if (!$alreadyReopened) {
+    $hours = complaint_sla_hours((string)$complaint['severity']);
     $stmt = $db->prepare(
       "UPDATE complaints SET status = 'open', resident_confirmation = 'reopened',
-              confirmed_at = NULL, reopened_at = NOW() WHERE id = ?"
+              confirmed_at = NULL, reopened_at = NOW(),
+              sla_due_at = CASE WHEN assigned_official_id IS NULL THEN NULL
+                                ELSE DATE_ADD(NOW(), INTERVAL ? HOUR) END,
+              escalated_at = NULL
+        WHERE id = ?"
     );
     if (!$stmt) throw new RuntimeException($db->error);
-    $stmt->bind_param('i', $complaintId);
+    $stmt->bind_param('ii', $hours, $complaintId);
     if (!$stmt->execute()) throw new RuntimeException($stmt->error);
     $stmt->close();
     $stmt = $db->prepare(

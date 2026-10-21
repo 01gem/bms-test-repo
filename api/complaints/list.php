@@ -21,10 +21,24 @@ $db = get_db();
 
 $sql = "SELECT c.id, c.resident_id, c.reference_no, c.resident_name, c.category, c.severity, c.location_text, c.description, c.date_filed, c.status, c.official_note,
         c.resident_confirmation, c.confirmed_at, c.reopened_at,
+        c.assigned_official_id, c.sla_due_at, c.escalated_at,
+        CASE
+          WHEN a.id IS NULL THEN NULL
+          WHEN TRIM(CONCAT(COALESCE(a.fname, ''), ' ', COALESCE(a.lname, ''))) = '' THEN NULL
+          ELSE TRIM(CONCAT(COALESCE(a.fname, ''), ' ', COALESCE(a.lname, '')))
+        END AS assigned_official_name,
+        a.status AS assigned_official_status,
+        CASE
+          WHEN c.status IN ('open', 'investigating')
+           AND c.sla_due_at IS NOT NULL
+           AND c.sla_due_at <= NOW()
+          THEN 1 ELSE 0
+        END AS is_overdue,
         COALESCE((SELECT MAX(u.id) FROM complaint_updates u
                   WHERE u.complaint_id = c.id AND u.to_status = 'resolved'
                     AND COALESCE(u.from_status, '') <> 'resolved'), 0) AS resolution_update_id
-        FROM complaints c";
+        FROM complaints c
+        LEFT JOIN barangay_officials a ON a.id = c.assigned_official_id";
 if ($officialSession) {
   $sql .= ' ORDER BY c.id DESC';
 } else {
