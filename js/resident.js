@@ -437,6 +437,7 @@ function viewRequest(id) {
   ];
   const box = document.getElementById('requestModalBox');
   if (!box) return;
+  box.classList.remove('complaint-detail-box');
   box.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
       <h3 style="font-size:1.2rem;font-weight:600;color:var(--text)">Request Details</h3>
@@ -455,7 +456,9 @@ function viewRequest(id) {
 }
 
 function closeRequestModal() {
+  const box = document.getElementById('requestModalBox');
   document.getElementById('requestModal')?.classList.remove('show');
+  box?.classList.remove('complaint-detail-box');
   complaintOpenGeneration += 1;
 }
 
@@ -484,9 +487,17 @@ function initReqFormToggle() {
   const form     = document.getElementById('newReqForm');
   const formEl   = document.getElementById('reqFormEl');
 
-  openBtn?.addEventListener('click',   () => { form.style.display = 'block'; form.scrollIntoView({ behavior:'smooth', block:'start' }); });
-  closeBtn?.addEventListener('click',  () => { form.style.display = 'none'; });
-  cancelBtn?.addEventListener('click', () => { form.style.display = 'none'; });
+  const requestClose = () => {
+    setFormModalOpen(form, false);
+    openBtn?.focus();
+  };
+
+  openBtn?.addEventListener('click', () => {
+    setFormModalOpen(form, true);
+    formEl?.querySelector('select, input, textarea')?.focus();
+  });
+  closeBtn?.addEventListener('click', requestClose);
+  cancelBtn?.addEventListener('click', requestClose);
   formEl?.addEventListener('submit', e => {
     e.preventDefault();
     submitRequest(formEl, form);
@@ -503,7 +514,7 @@ function severityChip(severity) {
     critical: { bg: '#FEE2E2', color: '#B91C1C', label: 'Critical' }
   };
   const s = map[String(severity).toLowerCase()] || map.medium;
-  return `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${s.bg};color:${s.color}">${s.label}</span>`;
+  return `<span style="display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;background:${s.bg};color:${s.color}">${s.label}</span>`;
 }
 
 async function loadComplaintTimeline(complaintId) {
@@ -513,17 +524,17 @@ async function loadComplaintTimeline(complaintId) {
 
 function renderTimelineHtml(updates) {
   if (!updates.length) {
-    return '<p style="color:var(--text-3);font-size:12.5px">No timeline entries yet.</p>';
+    return '<p class="complaint-meta">No timeline entries yet.</p>';
   }
   return '<ol style="list-style:none;padding:0;margin:0">' + updates.map(u => {
     const when = u.created_at ? escapeHtml(String(u.created_at)) : '';
     const who = escapeHtml(u.actor_name || (u.actor_type === 'system' ? 'System' : u.actor_type));
     const from = u.from_status ? `${escapeHtml(u.from_status)} → ` : '';
     const to = escapeHtml(u.to_status || '');
-    const note = u.note ? `<div style="color:var(--text-2);margin-top:3px">${escapeHtml(u.note)}</div>` : '';
-    return `<li style="padding:10px 0;border-bottom:1px solid var(--border)">
-      <div style="font-size:11px;color:var(--text-3)">${when}</div>
-      <div style="font-weight:600;color:var(--text);font-size:13px">${who} — ${from}${to}</div>
+    const note = u.note ? `<div class="complaint-timeline-note">${escapeHtml(u.note)}</div>` : '';
+    return `<li class="complaint-timeline-item">
+      <div class="complaint-timeline-when">${when}</div>
+      <div class="complaint-timeline-who">${who} — ${from}${to}</div>
       ${note}
     </li>`;
   }).join('') + '</ol>';
@@ -536,28 +547,27 @@ async function loadComplaintAttachments(complaintId) {
 
 function renderAttachmentsHtml(attachments) {
   if (!attachments.length) {
-    return '<p style="color:var(--text-3);font-size:12.5px">No photos attached.</p>';
+    return '<p class="complaint-meta">No photos attached.</p>';
   }
-  return '<div style="display:flex;gap:8px;flex-wrap:wrap">' + attachments.map(a => {
+  return '<div class="complaint-photos">' + attachments.map(a => {
     const href = escapeHtml(a.url);
     return `<a href="${href}" target="_blank" rel="noopener" title="Open full size">
-      <img src="${href}" alt="Complaint photo"
-        style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border)" />
+      <img src="${href}" alt="Complaint photo" />
     </a>`;
   }).join('') + '</div>';
 }
 
 // Keep in sync with the identical complaint comment helpers in js/official.js.
 function complaintCommentsSectionHtml() {
-  return `<section data-complaint-comments style="margin:16px 0">
-    <h4 style="margin:0 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Comments</h4>
-    <div data-comment-list aria-live="polite" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;padding:0 12px">Loading comments…</div>
-    <form data-comment-form style="margin-top:10px">
-      <label style="display:block;font-size:12px;color:var(--text-2)">Add a comment (up to 2,000 characters)
-        <textarea name="body" rows="3" required style="display:block;box-sizing:border-box;width:100%;margin:6px 0;padding:8px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text)"></textarea>
+  return `<section data-complaint-comments class="complaint-section">
+    <h4>Comments</h4>
+    <div data-comment-list aria-live="polite" class="complaint-scroll-well">Loading comments…</div>
+    <form data-comment-form class="complaint-controls">
+      <label class="complaint-field">Add a comment (up to 2,000 characters)
+        <textarea name="body" rows="3" required></textarea>
       </label>
-      <button type="submit" disabled style="padding:8px 16px;background:var(--blue-mid);color:white;border:none;border-radius:7px;cursor:pointer">Post comment</button>
-      <p data-comment-status role="status" style="font-size:12px;color:var(--text-2);margin:8px 0 0"></p>
+      <button type="submit" disabled class="complaint-btn">Post comment</button>
+      <p data-comment-status role="status" class="complaint-meta"></p>
     </form>
   </section>`;
 }
@@ -568,16 +578,16 @@ async function loadComplaintComments(complaintId) {
 }
 
 function renderComplaintCommentsHtml(comments) {
-  if (!comments.length) return '<p style="color:var(--text-3);font-size:12.5px">No comments yet.</p>';
+  if (!comments.length) return '<p class="complaint-meta">No comments yet.</p>';
   return comments.map(comment => {
     const name = escapeHtml(comment.actor_name || (comment.actor_type === 'official' ? 'Official' : 'Resident'));
     const role = comment.actor_type === 'official' ? 'Official' : 'Resident';
     const when = escapeHtml(String(comment.created_at || ''));
     const body = escapeHtml(String(comment.body || ''));
-    return `<article style="padding:10px 0;border-bottom:1px solid var(--border);overflow-wrap:anywhere">
-      <div style="font-size:12px;font-weight:600;color:var(--text)">${name} · ${role}</div>
-      <div style="font-size:11px;color:var(--text-3)">${when}</div>
-      <div style="white-space:pre-wrap;font-size:13px;line-height:1.5;color:var(--text-2);margin-top:4px">${body}</div>
+    return `<article class="complaint-comment">
+      <div class="complaint-comment-name">${name} · ${role}</div>
+      <div class="complaint-comment-when">${when}</div>
+      <div class="complaint-comment-body">${body}</div>
     </article>`;
   }).join('');
 }
@@ -668,7 +678,7 @@ function complaintResidentResponseTimesHtml(c) {
     parts.push(`Reopened ${escapeHtml(String(c.reopenedAt))}`);
   }
   if (!parts.length) return '';
-  return `<p data-response-times style="margin:4px 0 0;font-size:12px;color:var(--text-3)">${parts.join(' · ')}</p>`;
+  return `<p data-response-times class="complaint-meta">${parts.join(' · ')}</p>`;
 }
 
 // Keep in sync with the identical complaintIdOrNull() in js/official.js.
@@ -703,20 +713,20 @@ function complaintTriageSummaryHtml(c) {
   const assignee = escapeHtml(complaintAssigneeLabel(c));
   const state = escapeHtml(complaintTriageStateText(c));
   const target = c.slaDueAt
-    ? `<p data-triage-target style="margin:4px 0 0;font-size:12px;color:var(--text-3)">Response target ${escapeHtml(String(c.slaDueAt))}</p>`
+    ? `<p data-triage-target class="complaint-meta">Response target ${escapeHtml(String(c.slaDueAt))}</p>`
     : '';
   let flagged = '';
   if (c.escalatedAt && c.status === 'resolved') {
-    flagged = `<p data-triage-flagged style="margin:4px 0 0;font-size:12px;color:var(--text-3)">Previously flagged ${escapeHtml(String(c.escalatedAt))}</p>`;
+    flagged = `<p data-triage-flagged class="complaint-meta">Previously flagged ${escapeHtml(String(c.escalatedAt))}</p>`;
   } else if (c.escalatedAt) {
-    flagged = `<p data-triage-flagged style="margin:4px 0 0;font-size:12px;color:var(--text-3)">Flagged ${escapeHtml(String(c.escalatedAt))}</p>`;
+    flagged = `<p data-triage-flagged class="complaint-meta">Flagged ${escapeHtml(String(c.escalatedAt))}</p>`;
   }
-  return `<p data-triage-assignee style="margin:0;font-size:13px;font-weight:600;color:var(--text)">${assignee}</p>${target}<p data-triage-state style="margin:4px 0 0;font-size:12.5px;color:var(--text-2)">${state}</p>${flagged}`;
+  return `<p data-triage-assignee class="complaint-strong">${assignee}</p>${target}<p data-triage-state class="complaint-meta">${state}</p>${flagged}`;
 }
 
 function complaintTriageSectionHtml(c) {
-  return `<section data-complaint-triage data-complaint-id="${Number(c.id)}" style="margin:0 0 16px">
-    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Assignment</h4>
+  return `<section data-complaint-triage data-complaint-id="${Number(c.id)}" class="complaint-section complaint-section-block">
+    <h4>Assignment</h4>
     <div data-triage-summary>${complaintTriageSummaryHtml(c)}</div>
   </section>`;
 }
@@ -724,28 +734,22 @@ function complaintTriageSectionHtml(c) {
 function paintComplaintTriageSummary(root, complaint) {
   if (!root || !complaint) return;
   const summary = root.querySelector('[data-triage-summary]');
-  if (summary) {
-    summary.innerHTML = complaintTriageSummaryHtml(complaint);
-    return;
-  }
-  const timeline = root.querySelector('#complaintTimeline');
-  const heading = timeline ? timeline.previousElementSibling : null;
-  if (heading) heading.insertAdjacentHTML('beforebegin', complaintTriageSectionHtml(complaint));
+  if (summary) summary.innerHTML = complaintTriageSummaryHtml(complaint);
 }
 
 function complaintResolutionActionsHtml(c) {
   if (!c || c.status !== 'resolved') return '';
   const confirm = c.residentConfirmation === 'confirmed'
     ? ''
-    : '<button type="button" data-confirm-resolution style="padding:8px 16px;background:var(--blue-mid);color:white;border:none;border-radius:7px;cursor:pointer">Confirm resolution</button>';
-  return `<div data-response-actions style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+    : '<button type="button" data-confirm-resolution class="complaint-btn">Confirm resolution</button>';
+  return `<div data-response-actions class="complaint-control-row">
       ${confirm}
-      <button type="button" data-reopen-toggle aria-expanded="false" style="padding:8px 16px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:7px;cursor:pointer">Still broken? Reopen complaint</button>
-      <div data-reopen-panel hidden style="flex-basis:100%">
-        <label style="display:block;font-size:12px;color:var(--text-2)">What is still broken? This reason is posted as a comment.
-          <textarea data-reopen-reason rows="3" style="display:block;box-sizing:border-box;width:100%;margin:6px 0;padding:8px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text)"></textarea>
+      <button type="button" data-reopen-toggle aria-expanded="false" class="complaint-btn complaint-btn-ghost">Still broken? Reopen complaint</button>
+      <div data-reopen-panel hidden class="complaint-reopen">
+        <label class="complaint-field">What is still broken? This reason is posted as a comment.
+          <textarea data-reopen-reason rows="3"></textarea>
         </label>
-        <button type="button" data-reopen-submit style="padding:8px 16px;background:var(--blue-mid);color:white;border:none;border-radius:7px;cursor:pointer">Reopen complaint</button>
+        <button type="button" data-reopen-submit class="complaint-btn">Reopen complaint</button>
       </div>
     </div>`;
 }
@@ -753,12 +757,12 @@ function complaintResolutionActionsHtml(c) {
 function complaintResidentResponseSectionHtml(c) {
   const text = complaintResidentResponseText(c);
   if (!text) return '';
-  return `<section data-resident-response data-complaint-id="${Number(c.id)}" style="margin:0 0 16px">
-    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Resident response</h4>
-    <p data-response-summary style="margin:0;font-size:13px;font-weight:600;color:var(--text)">${escapeHtml(text)}</p>
+  return `<section data-resident-response data-complaint-id="${Number(c.id)}" class="complaint-section complaint-section-block">
+    <h4>Resident response</h4>
+    <p data-response-summary class="complaint-strong">${escapeHtml(text)}</p>
     ${complaintResidentResponseTimesHtml(c)}
     ${complaintResolutionActionsHtml(c)}
-    <p data-response-status role="status" style="font-size:12px;color:var(--text-2);margin:8px 0 0"></p>
+    <p data-response-status role="status" class="complaint-meta"></p>
   </section>`;
 }
 
@@ -821,7 +825,7 @@ function initResidentResolutionActions(section, complaint, box, options = {}) {
     button.type = 'button';
     button.dataset.refreshResolution = '';
     button.textContent = 'Refresh status';
-    button.style.cssText = 'display:inline-block;margin:8px 8px 0 0;padding:8px 16px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:7px;cursor:pointer';
+    button.className = 'complaint-btn complaint-btn-ghost';
     if (statusEl) statusEl.before(button);
     else section.append(button);
     button.addEventListener('click', () => {
@@ -849,7 +853,10 @@ function initResidentResolutionActions(section, complaint, box, options = {}) {
   const paintResolution = (updated) => {
     paintComplaintTriageSummary(box, updated);
     const statusNode = box.querySelector('[data-complaint-status]');
-    if (statusNode && statusNode.isConnected) statusNode.textContent = updated.status;
+    if (statusNode && statusNode.isConnected) {
+      statusNode.textContent = updated.status;
+      statusNode.className = `status-badge status-${updated.status}`;
+    }
     const summary = section.querySelector('[data-response-summary]');
     if (summary) summary.textContent = complaintResidentResponseText(updated);
     section.querySelector('[data-response-times]')?.remove();
@@ -1121,11 +1128,11 @@ function complaintOwnSharingHtml(c) {
     ? 'Sharing enabled for the resident community'
     : 'Private';
   const link = c.isDuplicate
-    ? '<p style="margin:4px 0 0;font-size:12.5px;color:var(--text-2)">Linked to a related report; each complaint remains tracked separately.</p>'
+    ? '<p class="complaint-meta">Linked to a related report; each complaint remains tracked separately.</p>'
     : '';
-  return `<section data-complaint-own-sharing style="margin:0 0 16px">
-    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Sharing</h4>
-    <p style="margin:0;font-size:13px;font-weight:600;color:var(--text)">${escapeHtml(sharing)}</p>
+  return `<section data-complaint-own-sharing class="complaint-section complaint-section-block">
+    <h4>Sharing</h4>
+    <p class="complaint-strong">${escapeHtml(sharing)}</p>
     ${link}
   </section>`;
 }
@@ -1137,12 +1144,12 @@ function renderComplaintExtraFieldsHtml(fields) {
     && typeof field.label === 'string' && typeof field.value === 'string'
     && field.label !== '' && field.value !== '');
   if (!rows.length) return '';
-  return `<section data-complaint-extra-details style="margin:0 0 16px">
-    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Additional details</h4>
-    <dl style="display:grid;gap:8px;margin:0">${rows.map(field => `
-      <div style="padding:8px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:7px">
-        <dt style="font-size:11px;color:var(--text-3)">${escapeHtml(field.label)}</dt>
-        <dd style="margin:4px 0 0;font-size:13px;color:var(--text)">${escapeHtml(field.value)}</dd>
+  return `<section data-complaint-extra-details class="complaint-section complaint-section-block">
+    <h4>Additional details</h4>
+    <dl class="complaint-extra-list">${rows.map(field => `
+      <div>
+        <dt>${escapeHtml(field.label)}</dt>
+        <dd>${escapeHtml(field.value)}</dd>
       </div>`).join('')}
     </dl>
   </section>`;
@@ -1178,47 +1185,56 @@ async function viewComplaint(id) {
   box.dataset.attachmentToken = attachmentToken;
   const modal = document.getElementById('requestModal');
 
-  const rows = [
-    ['Reference Number', c.ref],
-    ['Category', c.cat],
-    ['Severity', c.severity, 'severity'],
-    ['Location', c.loc],
-    ['Description', c.description, 'multiline'],
-    ['Status', c.status, 'status'],
-    ['Official Note', c.note],
-    ['Date Filed', c.date]
-  ];
+  const descriptionHtml = c.description
+    ? escapeHtml(c.description).replace(/\r?\n/g, '<br>')
+    : '<span class="complaint-muted">No description provided.</span>';
+  const noteHtml = c.note
+    ? escapeHtml(c.note)
+    : '<span class="complaint-muted">No official note yet.</span>';
+  const fact = (label, html) => `<div class="complaint-fact"><dt>${escapeHtml(label)}</dt><dd>${html}</dd></div>`;
 
+  box.classList.add('complaint-detail-box');
   box.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
-      <h3 style="font-size:1.2rem;font-weight:600;color:var(--text)">Complaint Details</h3>
-      <button type="button" onclick="closeRequestModal()" style="background:none;border:none;font-size:18px;color:var(--text-3);cursor:pointer"><i class="fa-solid fa-xmark"></i></button>
+    <div class="complaint-detail-head">
+      <div>
+        <p class="complaint-detail-kicker">Complaint</p>
+        <h3>${escapeHtml(c.ref)}</h3>
+      </div>
+      <button type="button" class="complaint-detail-x" onclick="closeRequestModal()" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
     </div>
-    <dl style="display:grid;gap:8px;margin:0 0 20px">
-      ${rows.map(([label, value, mode]) => {
-        const safe = mode === 'multiline'
-          ? escapeHtml(value || 'Not provided').replace(/\r?\n/g, '<br>')
-          : (mode === 'severity'
-              ? severityChip(value)
-              : (mode === 'status'
-                  ? `<span data-complaint-status>${escapeHtml(value ?? 'Not provided')}</span>`
-                  : escapeHtml(value ?? 'Not provided')));
-        return `<div style="display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:7px">
-          <dt style="color:var(--text-3);font-size:11px;text-transform:uppercase;letter-spacing:.04em">${escapeHtml(label)}</dt>
-          <dd style="margin:0;color:var(--text);font-size:13px;font-weight:600;overflow-wrap:anywhere">${safe}</dd>
-        </div>`;
-      }).join('')}
-    </dl>
-    ${renderComplaintExtraFieldsHtml(c.extraFieldsDisplay)}
-    ${complaintResidentResponseSectionHtml(c)}
-    ${complaintTriageSectionHtml(c)}
-    ${complaintOwnSharingHtml(c)}
-    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Timeline</h4>
-    <div id="complaintTimeline" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;padding:0 12px"></div>
-    ${complaintCommentsSectionHtml()}
-    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Photos</h4>
-    <div id="complaintAttachments" style="border:1px solid var(--border);border-radius:7px;padding:12px"></div>
-    <button type="button" onclick="closeRequestModal()" style="padding:9px 24px;background:var(--blue-mid);color:white;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">Close</button>
+    <div class="complaint-detail-scroll">
+      <div class="complaint-detail-facts">
+        ${fact('Category', escapeHtml(c.cat || 'Not provided'))}
+        ${fact('Location', escapeHtml(c.loc || 'Not provided'))}
+        ${fact('Date Filed', escapeHtml(c.date || 'Not provided'))}
+        ${fact('Status', `<span class="status-badge status-${escapeHtml(c.status)}" data-complaint-status>${escapeHtml(c.status || 'Not provided')}</span>`)}
+        ${fact('Severity', severityChip(c.severity))}
+      </div>
+      <div class="complaint-detail-copy">
+        <section class="complaint-panel">
+          <h4>Description</h4>
+          <div class="complaint-panel-body">${descriptionHtml}</div>
+        </section>
+        <section class="complaint-panel complaint-panel-note">
+          <h4>Official note</h4>
+          <div class="complaint-panel-body">${noteHtml}</div>
+        </section>
+      </div>
+      ${renderComplaintExtraFieldsHtml(c.extraFieldsDisplay)}
+      ${complaintResidentResponseSectionHtml(c)}
+      <div class="complaint-detail-split">
+        <section class="complaint-section">
+          <h4>Timeline</h4>
+          <div id="complaintTimeline" class="complaint-scroll-well"></div>
+        </section>
+        ${complaintCommentsSectionHtml()}
+      </div>
+      <section class="complaint-section complaint-section-block">
+        <h4>Photos</h4>
+        <div id="complaintAttachments" class="complaint-photo-well"></div>
+      </section>
+    </div>
+    <button type="button" class="complaint-detail-close" onclick="closeRequestModal()">Close</button>
   `;
   if (seq !== complaintDetailSeq || openGeneration !== complaintOpenGeneration) return;
   document.getElementById('requestModal').classList.add('show');
@@ -1262,7 +1278,7 @@ function renderComplaintsList() {
           <div class="ci-ref">${c.ref} · ${c.cat}</div>
           <div class="ci-title">${c.loc}</div>
         </div>
-        <div style="display:flex;gap:6px;align-items:center">
+        <div class="ci-badges">
           ${severityChip(c.severity)}
           <span class="status-badge status-${c.status}">${c.status}</span>
         </div>
@@ -1275,9 +1291,8 @@ function renderComplaintsList() {
         <div class="progress-track"><div class="progress-fill" style="width:${c.progress}%"></div></div>
         <span class="progress-label">${c.progress}% resolved</span>
       </div>
-      <div style="margin-top:10px;text-align:right">
-        <button type="button" onclick="viewComplaint(${c.id})"
-          style="font-size:12px;padding:5px 12px;background:var(--surface);border:1.5px solid var(--border);border-radius:6px;cursor:pointer;font-weight:600;color:var(--text-2)">View Details</button>
+      <div class="ci-actions">
+        <button type="button" class="ci-view-btn" onclick="viewComplaint(${c.id})">View Details</button>
       </div>
     </div>
   `).join('');
@@ -1321,6 +1336,13 @@ function initComplaintExtraFields() {
   syncComplaintExtraFields(formEl);
 }
 
+function setFormModalOpen(form, open) {
+  if (!form) return;
+  form.classList.toggle('show', open);
+  form.style.display = '';
+  form.setAttribute('aria-hidden', open ? 'false' : 'true');
+}
+
 function initComplaintFormToggle() {
   const openBtn  = document.getElementById('newComplaintBtn');
   const closeBtn = document.getElementById('closeComplaintForm');
@@ -1328,15 +1350,18 @@ function initComplaintFormToggle() {
   const form     = document.getElementById('newComplaintForm');
   const formEl   = document.getElementById('complaintFormEl');
 
-  openBtn?.addEventListener('click',   () => { form.style.display = 'block'; form.scrollIntoView({ behavior:'smooth' }); });
-  closeBtn?.addEventListener('click',  () => {
+  const requestClose = () => {
     if (getRetryState(formEl)) { skipPendingComplaintUploads(formEl); return; }
-    form.style.display = 'none';
+    setFormModalOpen(form, false);
+    openBtn?.focus();
+  };
+
+  openBtn?.addEventListener('click', () => {
+    setFormModalOpen(form, true);
+    formEl?.querySelector('select, input, textarea')?.focus();
   });
-  cancelBtn?.addEventListener('click', () => {
-    if (getRetryState(formEl)) { skipPendingComplaintUploads(formEl); return; }
-    form.style.display = 'none';
-  });
+  closeBtn?.addEventListener('click', requestClose);
+  cancelBtn?.addEventListener('click', requestClose);
   formEl?.addEventListener('submit', e => {
     e.preventDefault();
     submitComplaint(formEl, form);
@@ -1706,7 +1731,7 @@ async function submitRequest(formEl, form) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ document_type: type, purpose, copies, fields: extras })
     });
-    form.style.display = 'none';
+    setFormModalOpen(form, false);
     formEl.reset();
     renderExtraRequestFields();
     updateRequestTotal();
@@ -1773,7 +1798,7 @@ async function submitComplaint(formEl, form) {
   await refreshResidentView();
 
   if (failedFiles.length === 0) {
-    form.style.display = 'none';
+    setFormModalOpen(form, false);
     formEl.reset();
     formEl.querySelectorAll('input[type="file"]').forEach(el => { el.value = ''; });
     if (files.length === 0) {
@@ -1865,7 +1890,7 @@ function closeComplaintRetryMode(formEl) {
   });
   const actions = state.formEl.querySelector('.form-actions');
   if (actions) actions.style.display = '';
-  state.form.style.display = 'none';
+  setFormModalOpen(state.form, false);
   state.formEl.reset();
   // form.reset() is unreliable for FileList across engines — force-clear.
   state.formEl.querySelectorAll('input[type="file"]').forEach(el => { el.value = ''; });

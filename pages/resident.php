@@ -194,11 +194,11 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
           <button class="btn-primary-action" id="newReqBtn"><i class="fa-solid fa-plus"></i> New Request</button>
         </div>
 
-        <!-- New Request Form -->
-        <div class="card form-card" id="newReqForm" style="display:none;">
+        <div class="modal-overlay" id="newReqForm" aria-hidden="true">
+          <div class="modal-box request-form-box" role="dialog" aria-modal="true" aria-labelledby="requestFormTitle">
           <div class="form-card-header">
-            <h3><i class="fa-solid fa-file-circle-plus"></i> New Document Request</h3>
-            <button class="close-card-btn" id="closeReqForm"><i class="fa-solid fa-xmark"></i></button>
+            <h3 id="requestFormTitle"><i class="fa-solid fa-file-circle-plus"></i> New Document Request</h3>
+            <button type="button" class="close-card-btn" id="closeReqForm" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
           </div>
           <form id="reqFormEl">
             <div class="form-3col">
@@ -250,6 +250,7 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
               <button type="button" class="btn-cancel-form" id="cancelReqForm">Cancel</button>
             </div>
           </form>
+          </div>
         </div>
 
         <!-- Requests Table -->
@@ -294,10 +295,11 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
           </div>
         </div>
 
-        <div class="card form-card" id="newComplaintForm" style="display:none;">
+        <div class="modal-overlay" id="newComplaintForm" aria-hidden="true">
+          <div class="modal-box complaint-form-box" role="dialog" aria-modal="true" aria-labelledby="complaintFormTitle">
           <div class="form-card-header">
-            <h3><i class="fa-solid fa-flag"></i> Submit a Complaint or Concern</h3>
-            <button class="close-card-btn" id="closeComplaintForm"><i class="fa-solid fa-xmark"></i></button>
+            <h3 id="complaintFormTitle"><i class="fa-solid fa-flag"></i> Submit a Complaint or Concern</h3>
+            <button type="button" class="close-card-btn" id="closeComplaintForm" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
           </div>
           <form id="complaintFormEl">
             <div class="form-3col">
@@ -373,6 +375,7 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
               <button type="button" class="btn-cancel-form" id="cancelComplaintForm">Cancel</button>
             </div>
           </form>
+          </div>
         </div>
 
         <div class="card">
