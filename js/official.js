@@ -31,6 +31,8 @@ let COMPLAINTS_ADMIN = [];
 let officialComplaintDetailSeq = 0;
 let complaintListSeq = 0;
 const complaintAssignmentHold = new Map();
+const complaintSharingHold = new Map();
+let sharingLoadSeq = 0;
 let ANNOUNCEMENTS_DATA = [];
 let SERVICES_DATA = [];
 let AUDIT_LOG = [];
@@ -1844,6 +1846,338 @@ function renderComplaintExtraFieldsHtml(fields) {
   </section>`;
 }
 
+function complaintSharingSummaryHtml(c) {
+  const sharing = c.isPublic
+    ? 'Sharing enabled for the resident community'
+    : 'Private';
+  const link = c.isDuplicate
+    ? `Linked to ${c.duplicateReferenceNo || 'a related report'}. Each complaint remains tracked separately.`
+    : 'No related-report link.';
+  const children = `Related reports on file: ${complaintNonNegativeInt(c.duplicateChildrenCount)}.`;
+  const parentButton = c.duplicateOfId != null
+    ? `<p style="margin:6px 0 0"><button type="button" data-open-related-report="${Number(c.duplicateOfId)}" style="padding:6px 12px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:7px;cursor:pointer">View related report</button></p>`
+    : '';
+  return `<p data-sharing-flag style="margin:0;font-size:13px;font-weight:600;color:var(--text)">${escapeHtml(sharing)}</p>
+    <p data-sharing-link style="margin:4px 0 0;font-size:12.5px;color:var(--text-2)">${escapeHtml(link)}</p>
+    <p data-sharing-children style="margin:4px 0 0;font-size:12.5px;color:var(--text-2)">${escapeHtml(children)}</p>
+    ${parentButton}`;
+}
+
+function complaintSharingExplanationHtml(c) {
+  const lines = [
+    'Residents see the category, severity, status, filing date, and shared-report count on a shared primary report.',
+    'A shared related report does not get its own card. It only adds to the primary report\'s shared-report count.',
+    'Hiding a primary report removes the whole group from the community board. It does not clear sharing choices on related reports. Sharing that primary report again restores those contributions.',
+  ];
+  if (c.isDuplicate) {
+    lines.push('Sharing this related report is allowed while its primary report is private. Residents see the contribution only after that primary report is shared. They do not see which report it is.');
+  }
+  if (c.isPublic) {
+    lines.push('Hide this complaint before changing its related-report link.');
+  }
+  if (complaintNonNegativeInt(c.duplicateChildrenCount) > 0) {
+    lines.push('This complaint has related reports, so it stays a primary report and cannot itself be linked as a duplicate.');
+  }
+  if (!window.IS_OFFICIAL_ADMIN) {
+    lines.push('Only an administrator can change sharing or related-report links.');
+  }
+  return lines.map(line => `<p data-sharing-note style="margin:4px 0 0;font-size:12.5px;color:var(--text-2)">${escapeHtml(line)}</p>`).join('');
+}
+
+function complaintSharingSectionHtml(c) {
+  const controls = window.IS_OFFICIAL_ADMIN ? `<div data-sharing-controls style="margin-top:10px">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)">
+        <input type="checkbox" data-share-toggle disabled>
+        Share with residents
+      </label>
+      <button type="button" data-save-sharing disabled style="margin-top:8px;padding:8px 16px;background:var(--blue-mid);color:white;border:none;border-radius:7px;cursor:pointer">Save sharing</button>
+      <label style="display:block;margin-top:12px;font-size:12px;color:var(--text-2)">Primary report
+        <select data-duplicate-select disabled style="display:block;box-sizing:border-box;width:100%;margin:6px 0;padding:8px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text)">
+          <option value="">No related-report link</option>
+        </select>
+      </label>
+      <button type="button" data-save-link disabled style="padding:8px 16px;background:var(--blue-mid);color:white;border:none;border-radius:7px;cursor:pointer">Save link</button>
+      <button type="button" data-refresh-sharing hidden style="margin-left:8px;padding:8px 16px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:7px;cursor:pointer">Refresh sharing/link status</button>
+      <p data-sharing-status role="status" style="font-size:12px;color:var(--text-2);margin:8px 0 0"></p>
+    </div>` : '';
+  return `<section data-complaint-sharing data-sharing-ready="0" style="margin:0 0 16px">
+    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Sharing and related reports</h4>
+    <div data-sharing-summary>${complaintSharingSummaryHtml(c)}</div>
+    <div data-sharing-explanation>${complaintSharingExplanationHtml(c)}</div>
+    ${controls}
+  </section>`;
+}
+
+function sharingStillOpen(box, complaintId, seq) {
+  const modal = document.getElementById('actionModal');
+  return !!(modal
+    && modal.classList.contains('show')
+    && box.isConnected
+    && Number(box.dataset.complaintId) === Number(complaintId)
+    && box.dataset.detailSeq === String(seq));
+}
+
+function bindRelatedReportButton(section) {
+  const button = section.querySelector('[data-open-related-report]');
+  if (!button || button.dataset.bound === '1') return;
+  button.dataset.bound = '1';
+  button.addEventListener('click', () => {
+    const id = Number(button.getAttribute('data-open-related-report'));
+    if (Number.isInteger(id) && id > 0) viewComplaint(id);
+  });
+}
+
+function sharingParentOptionsHtml(complaint, rows) {
+  const options = ['<option value="">No related-report link</option>'];
+  const seen = new Set();
+  (rows || []).forEach(row => {
+    const id = Number(row.id);
+    if (!Number.isInteger(id) || id <= 0 || id === Number(complaint.id) || seen.has(id)) return;
+    if (row.duplicateOfId != null) return;
+    seen.add(id);
+    options.push(`<option value="${id}">${escapeHtml(`${row.ref} · ${row.cat}`)}</option>`);
+  });
+  if (complaint.duplicateOfId != null && !seen.has(Number(complaint.duplicateOfId))) {
+    const parent = (rows || []).find(row => Number(row.id) === Number(complaint.duplicateOfId));
+    const label = parent
+      ? `${parent.ref} · ${parent.cat}`
+      : (complaint.duplicateReferenceNo || `Report ${complaint.duplicateOfId}`);
+    options.push(`<option value="${Number(complaint.duplicateOfId)}">${escapeHtml(label)}</option>`);
+  }
+  return options.join('');
+}
+
+function showSharingRefresh(section, message) {
+  section.dataset.sharingReady = '0';
+  delete section.dataset.expectedPublic;
+  delete section.dataset.expectedDuplicate;
+  const toggle = section.querySelector('[data-share-toggle]');
+  const saveShare = section.querySelector('[data-save-sharing]');
+  const select = section.querySelector('[data-duplicate-select]');
+  const saveLink = section.querySelector('[data-save-link]');
+  const refresh = section.querySelector('[data-refresh-sharing]');
+  const status = section.querySelector('[data-sharing-status]');
+  if (toggle) toggle.disabled = true;
+  if (saveShare) saveShare.disabled = true;
+  if (select) select.disabled = true;
+  if (saveLink) saveLink.disabled = true;
+  if (refresh) {
+    refresh.hidden = false;
+    refresh.disabled = section.dataset.sharingBusy === '1';
+  }
+  if (status && message) status.textContent = message;
+}
+
+function applySharingControls(section, complaint, rows) {
+  const summary = section.querySelector('[data-sharing-summary]');
+  if (summary) summary.innerHTML = complaintSharingSummaryHtml(complaint);
+  const explanation = section.querySelector('[data-sharing-explanation]');
+  if (explanation) explanation.innerHTML = complaintSharingExplanationHtml(complaint);
+  bindRelatedReportButton(section);
+  const toggle = section.querySelector('[data-share-toggle]');
+  const saveShare = section.querySelector('[data-save-sharing]');
+  const select = section.querySelector('[data-duplicate-select]');
+  const saveLink = section.querySelector('[data-save-link]');
+  const refresh = section.querySelector('[data-refresh-sharing]');
+  if (!toggle || !saveShare || !select || !saveLink) return false;
+  select.innerHTML = sharingParentOptionsHtml(complaint, rows);
+  const expectedLink = complaint.duplicateOfId == null ? '' : String(complaint.duplicateOfId);
+  select.value = expectedLink;
+  if (select.value !== expectedLink) {
+    showSharingRefresh(section, 'Sharing and link status could not be loaded. Use Refresh sharing/link status to try again.');
+    return false;
+  }
+  toggle.checked = complaint.isPublic === true;
+  section.dataset.expectedPublic = complaint.isPublic ? '1' : '0';
+  section.dataset.expectedDuplicate = expectedLink;
+  section.dataset.sharingReady = '1';
+  const linkLocked = complaint.isPublic === true || complaintNonNegativeInt(complaint.duplicateChildrenCount) > 0;
+  toggle.disabled = false;
+  saveShare.disabled = false;
+  select.disabled = linkLocked;
+  saveLink.disabled = linkLocked;
+  if (refresh) refresh.hidden = true;
+  return true;
+}
+
+async function reloadComplaintSharing(box, complaintId, seq, renderList) {
+  const token = ++sharingLoadSeq;
+  const data = await fetchJson(`${API_BASE}/complaints/list.php`);
+  const rows = (data.complaints || []).map(mapComplaintRow);
+  if (token !== sharingLoadSeq) return false;
+  if (!sharingStillOpen(box, complaintId, seq)) return false;
+  const section = box.querySelector('[data-complaint-sharing]');
+  if (!section) return false;
+  const updated = rows.find(item => Number(item.id) === Number(complaintId));
+  if (!updated) return false;
+  if (renderList) {
+    COMPLAINTS_ADMIN = rows;
+    refreshComplaintsAdmin();
+  }
+  const applied = applySharingControls(section, updated, rows);
+  if (applied) complaintSharingHold.delete(Number(complaintId));
+  else complaintSharingHold.set(Number(complaintId), true);
+  return applied;
+}
+
+function initComplaintSharing(box, complaint, seq) {
+  const section = box.querySelector('[data-complaint-sharing]');
+  if (!section) return;
+  bindRelatedReportButton(section);
+  if (!window.IS_OFFICIAL_ADMIN) return;
+  const complaintId = Number(complaint.id);
+  const status = section.querySelector('[data-sharing-status]');
+  const refresh = section.querySelector('[data-refresh-sharing]');
+  if (complaintSharingHold.has(complaintId)) {
+    showSharingRefresh(section, 'Sharing and link status needs a refresh before it can be changed.');
+  }
+
+  const recover = async (renderList) => {
+    try {
+      const ok = await reloadComplaintSharing(box, complaintId, seq, renderList);
+      if (!sharingStillOpen(box, complaintId, seq)) return ok;
+      if (!ok) {
+        showSharingRefresh(section, 'Sharing and link status could not be loaded. Use Refresh sharing/link status to try again.');
+      }
+      return ok;
+    } catch (error) {
+      if (!sharingStillOpen(box, complaintId, seq)) return false;
+      showSharingRefresh(section, 'Sharing and link status could not be loaded. Use Refresh sharing/link status to try again.');
+      return false;
+    }
+  };
+
+  const hold = (message) => {
+    complaintSharingHold.set(complaintId, true);
+    if (!sharingStillOpen(box, complaintId, seq)) return;
+    showSharingRefresh(section, message);
+  };
+
+  refresh?.addEventListener('click', () => {
+    const live = box.querySelector('[data-complaint-sharing]');
+    if (!live || live.dataset.sharingBusy === '1') return;
+    live.dataset.sharingBusy = '1';
+    const liveRefresh = live.querySelector('[data-refresh-sharing]');
+    const liveStatus = live.querySelector('[data-sharing-status]');
+    if (liveRefresh) liveRefresh.disabled = true;
+    if (liveStatus) liveStatus.textContent = 'Refreshing sharing and link status…';
+    recover(true).finally(() => {
+      if (!live.isConnected) return;
+      live.dataset.sharingBusy = '0';
+      const button = live.querySelector('[data-refresh-sharing]');
+      if (button && live.dataset.sharingReady !== '1') button.disabled = false;
+    });
+  });
+
+  const submitSharing = (kind) => {
+    const live = box.querySelector('[data-complaint-sharing]');
+    if (!live || !sharingStillOpen(box, complaintId, seq)) return;
+    if (live.dataset.sharingBusy === '1' || live.dataset.sharingReady !== '1') return;
+    if (!('expectedPublic' in live.dataset) || !('expectedDuplicate' in live.dataset)) return;
+    const toggle = live.querySelector('[data-share-toggle]');
+    const select = live.querySelector('[data-duplicate-select]');
+    const liveStatus = live.querySelector('[data-sharing-status]');
+    if (!toggle || !select) return;
+    const expectedPublic = live.dataset.expectedPublic === '1';
+    const expectedDuplicate = live.dataset.expectedDuplicate === '' ? null : Number(live.dataset.expectedDuplicate);
+    if (expectedDuplicate !== null && (!Number.isInteger(expectedDuplicate) || expectedDuplicate <= 0)) return;
+    let payload;
+    let url;
+    if (kind === 'share') {
+      url = `${API_BASE}/complaints/set_visibility.php`;
+      payload = {
+        complaint_id: complaintId,
+        is_public: toggle.checked === true,
+        expected_is_public: expectedPublic,
+        expected_duplicate_of_id: expectedDuplicate,
+      };
+    } else {
+      const duplicateOfId = select.value === '' ? null : Number(select.value);
+      if (duplicateOfId !== null && (!Number.isInteger(duplicateOfId) || duplicateOfId <= 0)) return;
+      if (select.disabled) return;
+      url = `${API_BASE}/complaints/set_duplicate.php`;
+      payload = {
+        complaint_id: complaintId,
+        duplicate_of_id: duplicateOfId,
+        expected_duplicate_of_id: expectedDuplicate,
+      };
+    }
+    live.dataset.sharingBusy = '1';
+    live.dataset.sharingReady = '0';
+    toggle.disabled = true;
+    select.disabled = true;
+    live.querySelector('[data-save-sharing]').disabled = true;
+    live.querySelector('[data-save-link]').disabled = true;
+    if (liveStatus) liveStatus.textContent = kind === 'share' ? 'Saving sharing…' : 'Saving link…';
+
+    const finishBusy = () => {
+      if (!live.isConnected) return;
+      live.dataset.sharingBusy = '0';
+      const refreshBtn = live.querySelector('[data-refresh-sharing]');
+      if (refreshBtn && live.dataset.sharingReady !== '1') refreshBtn.disabled = false;
+    };
+
+    (async () => {
+      let response;
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } catch (error) {
+        hold('The result could not be verified. Use Refresh sharing/link status before trying again.');
+        return;
+      }
+      let data = null;
+      try {
+        const raw = await response.text();
+        if (raw.trim() !== '') data = JSON.parse(raw);
+      } catch (error) {
+        hold('The result could not be verified. Use Refresh sharing/link status before trying again.');
+        return;
+      }
+      if (!sharingStillOpen(box, complaintId, seq)) return;
+      if (!data || typeof data !== 'object') {
+        hold('The result could not be verified. Use Refresh sharing/link status before trying again.');
+        return;
+      }
+      if (response.status === 409) {
+        const review = `${data.message || 'This complaint changed.'} Review the current sharing and link before saving again.`;
+        if (liveStatus) liveStatus.textContent = review;
+        complaintSharingHold.set(complaintId, true);
+        const ok = await recover(true);
+        if (!sharingStillOpen(box, complaintId, seq)) return;
+        if (ok && liveStatus) liveStatus.textContent = review;
+        if (!ok) hold(`${review} Use Refresh sharing/link status to load the current state.`);
+        return;
+      }
+      if (!response.ok || !data.success) {
+        if (liveStatus) liveStatus.textContent = data.message || 'Could not save.';
+        const ok = await recover(true);
+        if (!sharingStillOpen(box, complaintId, seq)) return;
+        if (!ok) hold('Sharing and link status could not be loaded. Use Refresh sharing/link status to try again.');
+        else if (liveStatus) liveStatus.textContent = data.message || 'Could not save.';
+        return;
+      }
+      const savedMessage = data.message || 'Saved.';
+      if (liveStatus) liveStatus.textContent = savedMessage;
+      complaintSharingHold.set(complaintId, true);
+      const ok = await recover(true);
+      if (!sharingStillOpen(box, complaintId, seq)) return;
+      if (ok) {
+        if (liveStatus) liveStatus.textContent = savedMessage;
+        return;
+      }
+      hold(`Saved. ${savedMessage} Use Refresh sharing/link status to load the latest state.`);
+    })().finally(finishBusy);
+  };
+
+  section.querySelector('[data-save-sharing]')?.addEventListener('click', () => submitSharing('share'));
+  section.querySelector('[data-save-link]')?.addEventListener('click', () => submitSharing('link'));
+  recover(false);
+}
+
 function viewComplaint(id) {
   const seq = ++officialComplaintDetailSeq;
   const c = COMPLAINTS_ADMIN.find(x => Number(x.id) === Number(id));
@@ -1888,6 +2222,7 @@ function viewComplaint(id) {
     ${renderComplaintExtraFieldsHtml(c.extraFieldsDisplay)}
     ${complaintResidentResponseSectionHtml(c)}
     ${complaintTriageSectionHtml(c)}
+    ${complaintSharingSectionHtml(c)}
     <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Timeline</h4>
     <div id="complaintTimeline" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;padding:0 12px"></div>
     ${complaintCommentsSectionHtml()}
@@ -1898,6 +2233,7 @@ function viewComplaint(id) {
   initComplaintComments(box.querySelector('[data-complaint-comments]'), c.id);
   document.getElementById('actionModal').classList.add('show');
   initComplaintAssignment(box, c, seq);
+  initComplaintSharing(box, c, seq);
   const modal = document.getElementById('actionModal');
   const sameOfficialDetail = () => modal
     && modal.classList.contains('show')
@@ -2074,7 +2410,20 @@ function mapComplaintRow(row) {
     extraFields: row.extra_fields && typeof row.extra_fields === 'object' && !Array.isArray(row.extra_fields)
       ? row.extra_fields : {},
     extraFieldsDisplay: Array.isArray(row.extra_fields_display) ? row.extra_fields_display : [],
+    isPublic: row.is_public === true || row.is_public === 1,
+    isDuplicate: row.is_duplicate === true || row.is_duplicate === 1,
+    duplicateOfId: complaintIdOrNull(row.duplicate_of_id),
+    duplicateReferenceNo: typeof row.duplicate_reference_no === 'string' && row.duplicate_reference_no.trim() !== ''
+      ? row.duplicate_reference_no
+      : null,
+    duplicateChildrenCount: complaintNonNegativeInt(row.duplicate_children_count),
   };
+}
+
+function complaintNonNegativeInt(value) {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) return value;
+  if (typeof value === 'string' && /^[0-9]+$/.test(value)) return Number(value);
+  return 0;
 }
 
 async function fetchJson(url, options) {

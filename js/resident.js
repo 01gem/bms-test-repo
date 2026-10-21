@@ -1116,6 +1116,20 @@ function restoreComplaintDrafts(box, draft) {
   if (commentInput && draft.commentDraft) commentInput.value = draft.commentDraft;
 }
 
+function complaintOwnSharingHtml(c) {
+  const sharing = c.isPublic
+    ? 'Sharing enabled for the resident community'
+    : 'Private';
+  const link = c.isDuplicate
+    ? '<p style="margin:4px 0 0;font-size:12.5px;color:var(--text-2)">Linked to a related report; each complaint remains tracked separately.</p>'
+    : '';
+  return `<section data-complaint-own-sharing style="margin:0 0 16px">
+    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Sharing</h4>
+    <p style="margin:0;font-size:13px;font-weight:600;color:var(--text)">${escapeHtml(sharing)}</p>
+    ${link}
+  </section>`;
+}
+
 // Keep in sync with js/official.js renderComplaintExtraFieldsHtml.
 function renderComplaintExtraFieldsHtml(fields) {
   if (!Array.isArray(fields)) return '';
@@ -1198,6 +1212,7 @@ async function viewComplaint(id) {
     ${renderComplaintExtraFieldsHtml(c.extraFieldsDisplay)}
     ${complaintResidentResponseSectionHtml(c)}
     ${complaintTriageSectionHtml(c)}
+    ${complaintOwnSharingHtml(c)}
     <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">Timeline</h4>
     <div id="complaintTimeline" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;padding:0 12px"></div>
     ${complaintCommentsSectionHtml()}
@@ -1496,6 +1511,8 @@ function mapComplaintRow(row) {
     extraFields: row.extra_fields && typeof row.extra_fields === 'object' && !Array.isArray(row.extra_fields)
       ? row.extra_fields : {},
     extraFieldsDisplay: Array.isArray(row.extra_fields_display) ? row.extra_fields_display : [],
+    isPublic: row.is_public === true || row.is_public === 1,
+    isDuplicate: row.is_duplicate === true || row.is_duplicate === 1,
   };
 }
 

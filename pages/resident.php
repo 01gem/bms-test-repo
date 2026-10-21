@@ -288,7 +288,10 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
       <div class="tab-panel" id="tab-complaints">
         <div class="tab-header">
           <h2>Complaints &amp; Concerns</h2>
-          <button class="btn-primary-action" id="newComplaintBtn"><i class="fa-solid fa-plus"></i> New Complaint</button>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+            <a href="community_complaints.php" style="display:inline-flex;align-items:center;padding:9px 16px;border:1.5px solid var(--blue-mid);border-radius:8px;color:var(--blue-mid);font-size:13px;font-weight:700;background:var(--surface)">Community concerns</a>
+            <button class="btn-primary-action" id="newComplaintBtn"><i class="fa-solid fa-plus"></i> New Complaint</button>
+          </div>
         </div>
 
         <div class="card form-card" id="newComplaintForm" style="display:none;">

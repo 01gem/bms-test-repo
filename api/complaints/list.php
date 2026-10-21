@@ -20,7 +20,7 @@ if (!$officialSession && !$residentSession) {
 
 $db = get_db();
 
-$sql = "SELECT c.id, c.resident_id, c.reference_no, c.resident_name, c.category, c.severity, c.location_text, c.description, c.date_filed, c.status, c.official_note, c.extra_fields_json,
+$columns = "c.id, c.resident_id, c.reference_no, c.resident_name, c.category, c.severity, c.location_text, c.description, c.date_filed, c.status, c.official_note, c.extra_fields_json,
         c.resident_confirmation, c.confirmed_at, c.reopened_at,
         c.assigned_official_id, c.sla_due_at, c.escalated_at,
         CASE
@@ -37,13 +37,25 @@ $sql = "SELECT c.id, c.resident_id, c.reference_no, c.resident_name, c.category,
         END AS is_overdue,
         COALESCE((SELECT MAX(u.id) FROM complaint_updates u
                   WHERE u.complaint_id = c.id AND u.to_status = 'resolved'
-                    AND COALESCE(u.from_status, '') <> 'resolved'), 0) AS resolution_update_id
-        FROM complaints c
-        LEFT JOIN barangay_officials a ON a.id = c.assigned_official_id";
+                    AND COALESCE(u.from_status, '') <> 'resolved'), 0) AS resolution_update_id,
+        c.is_public";
 if ($officialSession) {
-  $sql .= ' ORDER BY c.id DESC';
+  $sql = "SELECT {$columns},
+        c.duplicate_of_id,
+        (c.duplicate_of_id IS NOT NULL) AS is_duplicate,
+        parent.reference_no AS duplicate_reference_no,
+        (SELECT COUNT(*) FROM complaints child WHERE child.duplicate_of_id = c.id) AS duplicate_children_count
+        FROM complaints c
+        LEFT JOIN barangay_officials a ON a.id = c.assigned_official_id
+        LEFT JOIN complaints parent ON parent.id = c.duplicate_of_id
+        ORDER BY c.id DESC";
 } else {
-  $sql .= ' WHERE c.resident_id = ? ORDER BY c.id DESC';
+  $sql = "SELECT {$columns},
+        (c.duplicate_of_id IS NOT NULL) AS is_duplicate
+        FROM complaints c
+        LEFT JOIN barangay_officials a ON a.id = c.assigned_official_id
+        WHERE c.resident_id = ?
+        ORDER BY c.id DESC";
 }
 $stmt = $db->prepare($sql);
 if (!$stmt) json_error('Failed to prepare complaints query.', 500);
@@ -59,6 +71,15 @@ foreach ($rows as &$row) {
   $row['extra_fields'] = (object)$extraFields;
   $row['extra_fields_display'] = complaint_extra_fields_display((string)$row['category'], $extraFields);
   unset($row['extra_fields_json']);
+  $row['is_public'] = (int)$row['is_public'] === 1;
+  $row['is_duplicate'] = (int)$row['is_duplicate'] === 1;
+  if ($officialSession) {
+    $row['duplicate_of_id'] = $row['duplicate_of_id'] === null ? null : (int)$row['duplicate_of_id'];
+    $row['duplicate_children_count'] = (int)$row['duplicate_children_count'];
+    $row['duplicate_reference_no'] = $row['duplicate_reference_no'] === null
+      ? null
+      : (string)$row['duplicate_reference_no'];
+  }
 }
 unset($row);
 
