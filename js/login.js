@@ -87,6 +87,8 @@ function initPasswordReset() {
   const requestForm = document.getElementById('resetRequestForm');
   const codeForm = document.getElementById('resetCodeForm');
   const passwordForm = document.getElementById('resetPasswordForm');
+  const completePanel = document.getElementById('resetComplete');
+  const doneButton = document.getElementById('resetDoneBtn');
   const message = document.getElementById('resetMessage');
   const accountLabel = document.getElementById('resetAccountLabel');
   let accountType = '';
@@ -98,10 +100,12 @@ function initPasswordReset() {
   };
   const open = (type) => {
     accountType = type;
+    document.getElementById('resetTitle').textContent = 'Reset your password';
     accountLabel.textContent = `${type === 'resident' ? 'Resident' : 'Official'} password recovery`;
     requestForm.reset();
     codeForm.reset();
     passwordForm.reset();
+    completePanel.hidden = true;
     requestForm.style.display = 'flex';
     codeForm.style.display = 'none';
     passwordForm.style.display = 'none';
@@ -116,6 +120,7 @@ function initPasswordReset() {
     requestForm.reset();
     codeForm.reset();
     passwordForm.reset();
+    completePanel.hidden = true;
     overlay.classList.remove('show');
     overlay.setAttribute('aria-hidden', 'true');
   };
@@ -127,6 +132,7 @@ function initPasswordReset() {
     });
   });
   document.getElementById('resetClose')?.addEventListener('click', close);
+  doneButton?.addEventListener('click', close);
   requestForm?.addEventListener('submit', async event => {
     event.preventDefault();
     const button = document.getElementById('sendResetCodeBtn');
@@ -204,12 +210,16 @@ function initPasswordReset() {
         code: verifiedCode,
         new_password: newPassword
       });
-      showMessage(data.message, 'success');
+      message.className = 'reset-message';
+      document.getElementById('resetTitle').textContent = 'Password reset complete';
+      accountLabel.textContent = 'You can now log in with your new password.';
       passwordForm.style.display = 'none';
-      requestForm.style.display = 'flex';
-      requestForm.reset();
+      codeForm.style.display = 'none';
+      completePanel.hidden = false;
       codeForm.reset();
+      passwordForm.reset();
       verifiedCode = '';
+      doneButton.focus();
     } catch (error) {
       showMessage(error.message, 'error');
     } finally {

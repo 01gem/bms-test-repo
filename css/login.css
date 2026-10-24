@@ -396,6 +396,8 @@ a { text-decoration: none; color: inherit; }
 .reset-message.show { display: block; }
 .reset-message.error { color: var(--danger); }
 .reset-message.success { color: var(--success); }
+.reset-complete[hidden] { display: none; }
+.reset-complete { text-align: center; }
 .reset-resend {
   border: none;
   background: transparent;

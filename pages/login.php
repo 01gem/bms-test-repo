@@ -369,6 +369,9 @@ function e($value) {
         </div>
         <button type="submit" class="btn-submit" id="resetPasswordBtn">Reset Password</button>
       </form>
+      <div id="resetComplete" class="reset-complete" role="status" aria-live="polite" hidden>
+        <button type="button" class="btn-submit" id="resetDoneBtn">Done</button>
+      </div>
     </div>
   </div>
 
