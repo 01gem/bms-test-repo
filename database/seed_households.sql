@@ -2,14 +2,14 @@
 -- 35 households and 100 residents across Puroks 1-5, plus one
 -- household_profiles row per household.
 --
--- Prereq schema: database.sql, then database/migration_household_profiling.sql.
+-- Prereq schema: database/database.sql.
 --   (poverty_thresholds id 1 = Surigao del Norte 2023, PHP 29,865.00 per capita/yr).
 -- Run:  mysql -uroot barangay_system_test_environment < database/seed_households.sql
 --
 -- Contents: 35 households (ids 1-35, codes HH-0001..0035), 100 residents
 -- (ids 1001-1100), one household_profiles row per household. Puroks 1-5.
 -- Purok 1, 2, and 5 have 5 households each. Purok 3 and Purok 4 have 10
--- (households 26-30 were purok 6; households 31-35 were purok 7).
+-- households each. Every seeded resident is linked to one of these households.
 -- Temporary password: 'K4pitan-Seed#91'.
 --
 -- Seeded resident accounts share one temporary password. See the line
@@ -77,10 +77,10 @@ VALUES (1, 'HH-0001', 1001, 'Purok 1, Brgy. Sampaguita', 'Purok 1', 4, 'complete
 INSERT INTO `household_profiles` (`household_id`, `num_children`, `num_working_age`, `num_seniors`, `has_4ps`, `has_pwd_member`, `has_senior_member`, `is_solo_parent_hh`, `children_5_17_total`, `children_5_17_not_in_school`, `members_19_plus_total`, `has_19_plus_secondary_grad`, `medical_need_6mo`, `medical_treatment_obtained`, `distance_health_center_km`, `distance_hospital_km`, `fies_worried_food`, `fies_no_nutritious`, `fies_few_food_types`, `fies_skipped_meals`, `fies_ate_less`, `fies_ran_out`, `fies_hungry`, `fies_whole_day_no_food`, `labor_force_total`, `employed_count`, `unemployed_seeking_count`, `employed_wanting_more_hours`, `working_children_5_17`, `working_children_not_in_school`, `housing_tenure`, `roof_material`, `wall_material`, `floor_area_sqm`, `main_water_source`, `toilet_facility`, `shared_toilet`, `has_electricity`, `has_internet`, `public_transport_access`, `assets_json`, `monthly_wages`, `monthly_business`, `monthly_remittances`, `monthly_pension`, `monthly_govt_assistance`, `monthly_other`, `contextual_flags_json`)
 VALUES (1, 2, 2, 0, 1, 0, 0, 0, 2, 1, 2, 1, 1, 1, 1.50, 14.00, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 0, 0, 0, 'Owned', 'Light', 'Light', 22.00, 'Community faucet', 'Water-sealed pour', 0, 0, 0, 1, '["mobile phone","radio"]', 0.00, 4500.00, 0.00, 0.00, 1800.00, 0.00, '{"ip_household":0,"disaster_affected_12mo":0,"ofw_member":0}');
 INSERT INTO `residents` (`id`, `household_id`, `profile_status`, `relationship_to_household_head`, `fname`, `lname`, `username`, `address`, `contact`, `password`, `status`, `birthdate`, `civil_status`, `purok_zone`, `household_size`, `is_solo_parent`, `is_pwd`, `is_4ps_member`, `educational_attainment`, `employment_status`, `occupation`) VALUES
-  (1001, 1, 'complete', 'Head', 'Rodrigo', 'Santos', 'santos01', 'Purok 1, Brgy. Sampaguita', '+639170001001', '$2y$10$CTVTeRTJbfeUxUErvWc4l.AezJLDNyeb1V4DvLEj/0/I4TwOp39D.', 'active', '1984-03-03', 'Married', 'Purok 1', 4, 0, 0, 1, 'Elementary', 'Self-Employed', 'Fisherman'),
-  (1002, 1, 'complete', 'Spouse', 'Marites', 'Santos', 'santos02', 'Purok 1, Brgy. Sampaguita', '+639170001002', '$2y$10$CTVTeRTJbfeUxUErvWc4l.AezJLDNyeb1V4DvLEj/0/I4TwOp39D.', 'active', '1987-04-04', 'Married', 'Purok 1', 4, 0, 0, 1, 'High School', 'Unemployed', NULL),
-  (1003, 1, 'complete', 'Son', 'Jomar', 'Santos', 'santos03', 'Purok 1, Brgy. Sampaguita', '+639170001003', '$2y$10$CTVTeRTJbfeUxUErvWc4l.AezJLDNyeb1V4DvLEj/0/I4TwOp39D.', 'active', '2012-05-05', 'Single', 'Purok 1', 4, 0, 0, 0, 'Elementary', NULL, NULL),
-  (1004, 1, 'complete', 'Daughter', 'Angel', 'Santos', 'santos04', 'Purok 1, Brgy. Sampaguita', '+639170001004', '$2y$10$CTVTeRTJbfeUxUErvWc4l.AezJLDNyeb1V4DvLEj/0/I4TwOp39D.', 'active', '2017-06-06', 'Single', 'Purok 1', 4, 0, 0, 0, 'Elementary', 'Student', NULL);
+  (1001, 1, 'complete', 'Head', 'Jennel', 'Nanol', 'nanol', 'Purok 1, Brgy. Sampaguita', '+639067349799', '$2y$10$CTVTeRTJbfeUxUErvWc4l.AezJLDNyeb1V4DvLEj/0/I4TwOp39D.', 'active', '1984-03-03', 'Married', 'Purok 1', 4, 0, 0, 1, 'Elementary', 'Self-Employed', 'Fisherman'),
+  (1002, 1, 'complete', 'Spouse', 'Gem', 'Dulduco', 'gemgem', 'Purok 1, Brgy. Sampaguita', '+639635707383', '$2y$10$CTVTeRTJbfeUxUErvWc4l.AezJLDNyeb1V4DvLEj/0/I4TwOp39D.', 'active', '1987-04-04', 'Married', 'Purok 1', 4, 0, 0, 1, 'High School', 'Unemployed', NULL),
+  (1003, 1, 'complete', 'Son', 'France', 'Bonono', 'bonono', 'Purok 1, Brgy. Sampaguita', '+639912530262', '$2y$10$CTVTeRTJbfeUxUErvWc4l.AezJLDNyeb1V4DvLEj/0/I4TwOp39D.', 'active', '2012-05-05', 'Single', 'Purok 1', 4, 0, 0, 0, 'Elementary', NULL, NULL),
+  (1004, 1, 'complete', 'Daughter', 'Christian', 'Deloy', 'deloyc', 'Purok 1, Brgy. Sampaguita', '+639506972820', '$2y$10$CTVTeRTJbfeUxUErvWc4l.AezJLDNyeb1V4DvLEj/0/I4TwOp39D.', 'active', '2017-06-06', 'Single', 'Purok 1', 4, 0, 0, 0, 'Elementary', 'Student', NULL);
 
 -- ============================================================================
 -- Household 2: Reyes | Purok 1 | 3 members | complete
