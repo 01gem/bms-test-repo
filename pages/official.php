@@ -95,6 +95,8 @@ if (count($officialNameParts) >= 2) {
       <button class="snav-item" data-tab="residents"><i class="fa-solid fa-users"></i> <span class="nav-text">Residents</span></button>
       <button class="snav-item" data-tab="requests"><i class="fa-solid fa-file-lines"></i> <span class="nav-text">Document Requests</span></button>
       <button class="snav-item" data-tab="complaints"><i class="fa-solid fa-triangle-exclamation"></i> <span class="nav-text">Complaints</span></button>
+      <div class="nav-group-label">Configuration</div>
+      <button class="snav-item" data-tab="documentprices"><i class="fa-solid fa-tags"></i> <span class="nav-text">Document Prices</span></button>
       <div class="nav-group-label">Community</div>
       <button class="snav-item" data-tab="announcements"><i class="fa-solid fa-bullhorn"></i> <span class="nav-text">Announcements</span></button>
       <button class="snav-item" data-tab="services"><i class="fa-solid fa-store"></i> <span class="nav-text">Local Services</span></button>
@@ -160,6 +162,25 @@ if (count($officialNameParts) >= 2) {
         <div class="card recent-activity-card">
           <div class="dc-head"><h3><i class="fa-solid fa-clock-rotate-left"></i> Recent System Activity</h3></div>
           <div id="dashActivity"></div>
+        </div>
+      </div>
+
+      <!-- ─── DOCUMENT PRICES ─── -->
+      <div class="tab-panel" id="tab-documentprices">
+        <div class="tab-header"><h2>Document Prices</h2></div>
+        <div class="card">
+          <div class="registry-header">
+            <div>
+              <h3><i class="fa-solid fa-tags"></i> Document Prices</h3>
+              <p>Set the unit price charged per print. Default is ₱20.00.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>Document</th><th>Price</th><th>Last Updated</th><th class="action-column">Action</th></tr></thead>
+              <tbody id="docPricesBody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -720,20 +741,6 @@ if (count($officialNameParts) >= 2) {
             </div>
           </div>
 
-          <div class="card">
-            <div class="registry-header">
-              <div>
-                <h3><i class="fa-solid fa-tags"></i> Document Prices</h3>
-                <p>Set the unit price charged per print. Default is ₱20.00.</p>
-              </div>
-            </div>
-            <div class="table-wrap">
-              <table class="data-table">
-                <thead><tr><th>Document</th><th>Price</th><th>Last Updated</th><th class="action-column">Action</th></tr></thead>
-                <tbody id="docPricesBody"></tbody>
-              </table>
-            </div>
-          </div>
         </div>
 
         <!-- ── Complaints Report ── -->

@@ -17,6 +17,7 @@ const SECTION_PLAQUES = {
   residents: { icon: 'fa-users', label: 'Population Management' },
   requests: { icon: 'fa-file-lines', label: 'Records & Processing' },
   complaints: { icon: 'fa-triangle-exclamation', label: 'Grievance Redressal' },
+  documentprices: { icon: 'fa-tags', label: 'Document Pricing' },
   announcements: { icon: 'fa-bullhorn', label: 'Public Information' },
   services: { icon: 'fa-hand-holding-heart', label: 'Welfare & Operations' },
   aianalyst: { icon: 'fa-brain', label: 'AI Analytics' },
@@ -85,6 +86,9 @@ function switchTab(name) {
   }
   if (name === 'officials' && window.IS_OFFICIAL_ADMIN) {
     loadOfficials().catch(err => showToastAdmin('Officials Load Failed', err.message));
+  }
+  if (name === 'documentprices') {
+    loadDocumentPrices().catch(err => showToastAdmin('Document Prices Load Failed', err.message));
   }
 }
 
@@ -775,7 +779,6 @@ async function loadReports() {
   await Promise.all([
     loadRequestReport(),
     loadComplaintReport(),
-    loadDocumentPrices(),
   ]);
 }
 
