@@ -850,7 +850,7 @@ if (count($officialNameParts) >= 2) {
             <form id="officialProfilePhotoForm" class="profile-photo-form" enctype="multipart/form-data">
               <label for="officialProfilePhotoInput" class="btn-submit-form">Change Photo</label>
               <input id="officialProfilePhotoInput" type="file" name="photo" accept="image/jpeg,image/png" hidden />
-              <small>JPEG or PNG, maximum 2MB</small>
+              <small>JPEG or PNG, maximum 50MB</small>
             </form>
           </div>
           <div class="card">

@@ -1395,7 +1395,7 @@ function initComplaintPhotoInput() {
   if (!input || !preview) return;
 
   const MAX_FILES = 3;
-  const MAX_BYTES = 5 * 1024 * 1024;
+  const MAX_BYTES = 50 * 1024 * 1024;
   const ALLOWED = ['image/jpeg', 'image/png'];
 
   const showError = (msg) => {
@@ -1420,7 +1420,7 @@ function initComplaintPhotoInput() {
         return;
       }
       if (file.size > MAX_BYTES) {
-        showError(`Photo too large: ${file.name}. Max 5MB.`);
+        showError(`Photo too large: ${file.name}. Max 50MB.`);
         input.value = '';
         return;
       }

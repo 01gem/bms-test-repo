@@ -21,7 +21,8 @@ require_post();
 $input = read_json_input();
 $id = (int)($input['id'] ?? 0);
 $status = trim((string)($input['status'] ?? ''));
-$officialNote = trim((string)($input['official_note'] ?? ''));
+$hasOfficialNote = array_key_exists('official_note', $input);
+$officialNote = $hasOfficialNote ? trim((string)$input['official_note']) : null;
 $severity = trim((string)($input['severity'] ?? ''));
 
 if ($id <= 0 || $status === '') {
@@ -68,7 +69,8 @@ try {
   $effectiveSeverity = $severity !== '' ? $severity : $storedSeverity;
   $oldStatus = (string)$complaint['status'];
   $statusChanged = $oldStatus !== $status;
-  $noteChanged = $storedNote !== $officialNote;
+  $effectiveOfficialNote = $hasOfficialNote ? $officialNote : $storedNote;
+  $noteChanged = $hasOfficialNote && $storedNote !== $effectiveOfficialNote;
   $severityChanged = $effectiveSeverity !== $storedSeverity;
   $confirmation = $complaint['resident_confirmation'];
   $confirmedAt = $complaint['confirmed_at'];
@@ -97,7 +99,7 @@ try {
     $update->bind_param(
       'sssisisi',
       $status,
-      $officialNote,
+      $effectiveOfficialNote,
       $effectiveSeverity,
       $confirmationIsNull,
       $confirmationValue,
@@ -113,8 +115,8 @@ try {
     $update->close();
 
     $actorType = 'official';
-    $timelineNoteIsNull = $officialNote === '' ? 1 : 0;
-    $timelineNote = $officialNote;
+    $timelineNoteIsNull = $hasOfficialNote && $effectiveOfficialNote === '' ? 1 : 0;
+    $timelineNote = $effectiveOfficialNote;
     $timeline = $db->prepare(
       'INSERT INTO complaint_updates (complaint_id, actor_type, actor_id, from_status, to_status, note)
        VALUES (?, ?, ?, ?, ?, IF(? = 1, NULL, ?))'
@@ -172,7 +174,7 @@ if ($changed && !$statusChanged) {
 } elseif ($statusChanged && $residentId > 0 && ($status === 'resolved' || $status === 'investigating')) {
   try {
     if ($status === 'resolved') {
-      $noteText = $officialNote !== '' ? " Official note: {$officialNote}" : '';
+      $noteText = $hasOfficialNote && $effectiveOfficialNote !== '' ? " Official note: {$effectiveOfficialNote}" : '';
       $sms = notify_resident(
         $residentId,
         'complaint_resolved',

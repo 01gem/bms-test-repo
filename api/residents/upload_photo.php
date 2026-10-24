@@ -23,8 +23,8 @@ $upload = $_FILES['photo'];
 if (($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
   json_error('Photo upload failed.');
 }
-if (($upload['size'] ?? 0) > 2 * 1024 * 1024) {
-  json_error('Photo must be 2MB or smaller.');
+if (($upload['size'] ?? 0) > 50 * 1024 * 1024) {
+  json_error('Photo must be 50MB or smaller.');
 }
 
 $finfo = finfo_open(FILEINFO_MIME_TYPE);

@@ -1292,9 +1292,6 @@ function renderComplaintsAdmin(data) {
             <option value="critical" ${c.severity==='critical' ?'selected':''}>Critical</option>
           </select>
         </label>
-        <label class="ca-field ca-field-note">Official note
-          <input type="text" class="ca-note-input" id="compNote-${domId}" placeholder="Add official note…" value="${escapeHtml(c.note)}" />
-        </label>
         <div class="ca-action-btns">
           <button class="btn-action resolve" onclick="updateComplaint(${domId})">Save</button>
           <button class="btn-action view" onclick="viewComplaint(${domId})">View</button>
@@ -2299,14 +2296,13 @@ async function updateComplaint(id) {
   const c = COMPLAINTS_ADMIN.find(x => Number(x.id) === Number(id));
   if (!c) return;
   const status = document.getElementById(`compStatus-${id}`).value;
-  const officialNote = document.getElementById(`compNote-${id}`).value;
   const severity = document.getElementById(`compSeverity-${id}`)?.value || c.severity || 'medium';
   try {
     const resolving = status === 'resolved';
     const data = await fetchJson(`${API_BASE}/complaints/${resolving ? 'notify_resolved' : 'update_status'}.php`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, status, official_note: officialNote, severity })
+      body: JSON.stringify({ id, status, severity })
     });
     const savedMessage = data.message || `${c.ref} status updated to "${status}".`;
     try {

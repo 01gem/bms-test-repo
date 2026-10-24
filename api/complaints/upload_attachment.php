@@ -24,8 +24,8 @@ $upload = $_FILES['photo'];
 if (($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
   json_error('Photo upload failed.');
 }
-if (($upload['size'] ?? 0) > 5 * 1024 * 1024) {
-  json_error('Photo must be 5MB or smaller.', 422);
+if (($upload['size'] ?? 0) > 50 * 1024 * 1024) {
+  json_error('Photo must be 50MB or smaller.', 422);
 }
 
 $tmpPath = (string)($upload['tmp_name'] ?? '');

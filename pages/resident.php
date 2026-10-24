@@ -361,7 +361,7 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
               </fieldset>
             <?php endforeach; ?>
             <div class="field" style="margin-top:12px;">
-              <label>Photos <span class="opt-label">(optional, up to 3, JPEG or PNG, max 5MB each)</span></label>
+              <label>Photos <span class="opt-label">(optional, up to 3, JPEG or PNG, max 50MB each)</span></label>
               <input type="file" id="reqPhotos" name="photos[]" class="form-input" accept="image/jpeg,image/png" multiple />
               <div id="reqPhotosPreview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>
               <small id="reqPhotosError" style="color:var(--danger);font-size:11.5px;display:none"></small>
@@ -418,7 +418,7 @@ $residentPhotoUrl = !empty($residentProfile['profile_photo']) ? '../' . ltrim($r
             <form id="profilePhotoForm" class="profile-photo-form" enctype="multipart/form-data">
               <label for="profilePhotoInput" class="btn-submit-form">Change Photo</label>
               <input id="profilePhotoInput" type="file" name="photo" accept="image/jpeg,image/png" hidden />
-              <small>JPEG or PNG, maximum 2MB</small>
+              <small>JPEG or PNG, maximum 50MB</small>
             </form>
           </div>
           <div class="card">
