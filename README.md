@@ -31,7 +31,7 @@ See the LICENSE file in the project root for the full text.
       households/        profiling wizard, registry, MPI engine
       ...
     css/                 stylesheets (one per portal)
-    database/            schema, migrations, household seed, engine test
+    database/            schema (database.sql), household seed, engine test
     js/                  front-end controllers (one per portal)
     pages/               PHP-rendered pages (login, resident, official)
 
@@ -45,10 +45,12 @@ See the LICENSE file in the project root for the full text.
 2. Create the schema in this order:
 
        mysql -uroot barangay_system_test_environment < database/database.sql
-       mysql -uroot barangay_system_test_environment < database/migration_household_profiling.sql
        mysql -uroot barangay_system_test_environment < database/seed_households.sql
 
-   The seed already writes canonical `+63` numbers for every account. `database/migration_normalize_phone.sql` is only needed when upgrading a pre-existing database.
+   `database.sql` builds the complete schema and seeds the default admin
+   account, the poverty thresholds, and the document prices. `seed_households.sql`
+   then loads the 35-household fixture. Both files are idempotent when run
+   against a database they created.
 
 3. Create a `.env` file at the project root with:
 
@@ -121,8 +123,10 @@ an engine bug, not a data bug.
   See `db.php` for the current session cookie settings. Adding CSRF is
   a cross-cutting change (every POST endpoint plus a middleware check)
   and is not in scope for this deployment pass.
-- No migration runner. Migrations are `.sql` files applied by hand.
-  Each file is idempotent and safe to re-run.
+- No migration runner. `database.sql` is the single source of truth for
+  schema. If you are upgrading a database built with the old `migration_*.sql`
+  chain, apply those migrations once before deleting them; then
+  `database.sql` becomes the fresh-install entry point.
 - Document-specific extra fields (e.g. civil_status for Barangay
   Clearance) are captured at request time in
   `document_requests.request_fields_json` and pre-fill the official
