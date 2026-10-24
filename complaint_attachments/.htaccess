@@ -1,0 +1,9 @@
+# Direct HTTP access to stored complaint evidence is denied.
+# Authorized reads go through api/complaints/view_attachment.php.
+# Apache 2.4. This file is not applied by PHP's built-in server.
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Deny from all
+</IfModule>

@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../common.php';
 session_start();
+enforce_active_session();
 // Phase 3 hook: no UI exposes this endpoint yet (see upload_attachment.php).
 // Resident-own and official-any paths are both live and API-tested; the future
 // detail-view delete control should honor both.

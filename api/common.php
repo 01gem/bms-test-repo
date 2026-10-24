@@ -7,6 +7,7 @@
  */
 
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/_session.php';
 require_once __DIR__ . '/households/mpi_engine.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -59,7 +60,18 @@ function normalize_purok($raw) {
   return false;
 }
 
+function enforce_active_session(): void {
+  $access = session_revalidate_active();
+  if (($access['error'] ?? null) === 'server') {
+    json_error('Something went wrong. Please try again.', 500);
+  }
+  if (empty($access['ok'])) {
+    json_error('Unauthorized', 401);
+  }
+}
+
 function require_official_session(): void {
+  enforce_active_session();
   if (empty($_SESSION['official_id'])) {
     json_error('Unauthorized', 401);
   }

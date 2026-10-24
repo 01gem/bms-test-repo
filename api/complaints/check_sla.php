@@ -8,6 +8,7 @@
 
 require_once __DIR__ . '/../common.php';
 session_start();
+enforce_active_session();
 
 $isOfficial = !empty($_SESSION['official_id']);
 $isResident = !empty($_SESSION['resident_id']);

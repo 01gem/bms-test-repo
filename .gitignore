@@ -46,6 +46,7 @@ profile_img/b_official/*
 profile_img/residents/*
 !profile_img/residents/README.txt
 
-complaint_attachments/
+complaint_attachments/*
+!complaint_attachments/.htaccess
 
 source-code.txt

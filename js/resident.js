@@ -375,10 +375,10 @@ function renderRecentComplaints() {
     <div class="mini-row">
       <div class="mr-icon" style="background:#FFF7ED; color:#EA580C"><i class="fa-solid fa-triangle-exclamation"></i></div>
       <div class="mr-text">
-        <div class="mr-title">${c.cat}</div>
-        <div class="mr-sub">${c.ref} · ${c.date}</div>
+        <div class="mr-title">${escapeHtml(c.cat)}</div>
+        <div class="mr-sub">${escapeHtml(c.ref)} · ${escapeHtml(c.date)}</div>
       </div>
-      <span class="status-badge status-${c.status}">${c.status}</span>
+      <span class="status-badge status-${complaintStatusToken(c.status)}">${escapeHtml(c.status)}</span>
     </div>
   `).join('');
 }
@@ -405,6 +405,22 @@ function renderRequestsTable(data) {
       <td><button onclick="viewRequest(${r.id})" style="font-size:12px;padding:5px 12px;background:var(--surface);border:1.5px solid var(--border);border-radius:6px;cursor:pointer;font-weight:600;color:var(--text-2);">View</button></td>
     </tr>
   `).join('');
+}
+
+function complaintStatusToken(status) {
+  const token = String(status || '').toLowerCase();
+  return ['open', 'investigating', 'resolved'].includes(token) ? token : 'unknown';
+}
+
+function complaintDomId(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? String(n) : '0';
+}
+
+function complaintProgressWidth(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(100, Math.max(0, n));
 }
 
 function escapeHtml(value) {
@@ -1207,7 +1223,7 @@ async function viewComplaint(id) {
         ${fact('Category', escapeHtml(c.cat || 'Not provided'))}
         ${fact('Location', escapeHtml(c.loc || 'Not provided'))}
         ${fact('Date Filed', escapeHtml(c.date || 'Not provided'))}
-        ${fact('Status', `<span class="status-badge status-${escapeHtml(c.status)}" data-complaint-status>${escapeHtml(c.status || 'Not provided')}</span>`)}
+        ${fact('Status', `<span class="status-badge status-${complaintStatusToken(c.status)}" data-complaint-status>${escapeHtml(c.status || 'Not provided')}</span>`)}
         ${fact('Severity', severityChip(c.severity))}
       </div>
       <div class="complaint-detail-copy">
@@ -1222,6 +1238,8 @@ async function viewComplaint(id) {
       </div>
       ${renderComplaintExtraFieldsHtml(c.extraFieldsDisplay)}
       ${complaintResidentResponseSectionHtml(c)}
+      ${complaintTriageSectionHtml(c)}
+      ${complaintOwnSharingHtml(c)}
       <div class="complaint-detail-split">
         <section class="complaint-section">
           <h4>Timeline</h4>
@@ -1275,24 +1293,24 @@ function renderComplaintsList() {
     <div class="complaint-item">
       <div class="ci-head">
         <div>
-          <div class="ci-ref">${c.ref} · ${c.cat}</div>
-          <div class="ci-title">${c.loc}</div>
+          <div class="ci-ref">${escapeHtml(c.ref)} · ${escapeHtml(c.cat)}</div>
+          <div class="ci-title">${escapeHtml(c.loc)}</div>
         </div>
         <div class="ci-badges">
           ${severityChip(c.severity)}
-          <span class="status-badge status-${c.status}">${c.status}</span>
+          <span class="status-badge status-${complaintStatusToken(c.status)}">${escapeHtml(c.status)}</span>
         </div>
       </div>
       <div class="ci-meta">
-        <span><i class="fa-regular fa-calendar"></i> Filed: ${c.date}</span>
+        <span><i class="fa-regular fa-calendar"></i> Filed: ${escapeHtml(c.date)}</span>
         <span><i class="fa-solid fa-comment-dots"></i> ${escapeHtml(c.note)}</span>
       </div>
       <div class="ci-progress">
-        <div class="progress-track"><div class="progress-fill" style="width:${c.progress}%"></div></div>
-        <span class="progress-label">${c.progress}% resolved</span>
+        <div class="progress-track"><div class="progress-fill" style="width:${complaintProgressWidth(c.progress)}%"></div></div>
+        <span class="progress-label">${complaintProgressWidth(c.progress)}% resolved</span>
       </div>
       <div class="ci-actions">
-        <button type="button" class="ci-view-btn" onclick="viewComplaint(${c.id})">View Details</button>
+        <button type="button" class="ci-view-btn" onclick="viewComplaint(${complaintDomId(c.id)})">View Details</button>
       </div>
     </div>
   `).join('');

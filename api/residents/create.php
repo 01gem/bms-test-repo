@@ -8,6 +8,7 @@
 
 require_once __DIR__ . '/../common.php';
 session_start();
+enforce_active_session();
 // Allow both staff and admin officials (401 if no official session at all)
 if (empty($_SESSION['official_id'])) {
   http_response_code(401);

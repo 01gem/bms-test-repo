@@ -8,6 +8,7 @@
 
 require_once __DIR__ . '/../common.php';
 session_start();
+enforce_active_session();
 
 $db = get_db();
 

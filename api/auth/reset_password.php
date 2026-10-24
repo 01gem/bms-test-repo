@@ -7,6 +7,7 @@
  */
 
 require_once __DIR__ . '/../common.php';
+require_once __DIR__ . '/_recovery.php';
 
 require_post();
 $input = read_json_input();
@@ -20,52 +21,46 @@ if (!in_array($accountType, ['resident', 'official'], true) || $username === '' 
 }
 
 $db = get_db();
-$table = $accountType === 'resident' ? 'residents' : 'barangay_officials';
-$accountStmt = $db->prepare("SELECT id FROM {$table} WHERE username = ? LIMIT 1");
-if (!$accountStmt) json_error('Unable to process password reset.', 500);
-$accountStmt->bind_param('s', $username);
-$accountRows = db_query_all($accountStmt);
-$accountStmt->close();
-if (count($accountRows) === 0) json_error('Invalid or expired reset code.');
-$accountId = (int)$accountRows[0]['id'];
+$table = recovery_account_table($accountType);
+$started = false;
 
-// Fetch the latest unused, unexpired OTP for the account (do not match code in SQL).
-$otpStmt = $db->prepare('SELECT id, code, attempts FROM otp_codes WHERE account_type = ? AND account_id = ? AND used = 0 AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1');
-if (!$otpStmt) json_error('Unable to process password reset.', 500);
-$otpStmt->bind_param('si', $accountType, $accountId);
-$otpRows = db_query_all($otpStmt);
-$otpStmt->close();
-if (count($otpRows) === 0) json_error('Invalid or expired reset code.');
-
-$otpRow = $otpRows[0];
-if ((int)$otpRow['attempts'] >= 5) {
-  json_error('Invalid or expired reset code.');
-}
-if (!hash_equals((string)$otpRow['code'], $code)) {
-  $bump = $db->prepare('UPDATE otp_codes SET attempts = attempts + 1 WHERE id = ?');
-  if ($bump) {
-    $otpId = (int)$otpRow['id'];
-    $bump->bind_param('i', $otpId);
-    $bump->execute();
-    $bump->close();
+try {
+  if (!$db->begin_transaction()) {
+    throw new RuntimeException('Could not start password reset.');
   }
-  json_error('Invalid or expired reset code.');
+  $started = true;
+  $account = recovery_lock_account($db, $table, $username);
+  if ($account === null) {
+    if (!$db->rollback()) throw new RuntimeException('Could not finish password reset.');
+    $started = false;
+    json_error('Invalid or expired reset code.');
+  }
+
+  $accountId = (int)$account['id'];
+  $otp = recovery_latest_code($db, $accountType, $accountId);
+  if ($otp === null || (int)$otp['attempts'] >= 5) {
+    if (!$db->rollback()) throw new RuntimeException('Could not finish password reset.');
+    $started = false;
+    json_error('Invalid or expired reset code.');
+  }
+
+  if (!hash_equals((string)$otp['code'], $code)) {
+    recovery_bump_attempt($db, (int)$otp['id']);
+    if (!$db->commit()) throw new RuntimeException('Could not record the reset attempt.');
+    $started = false;
+    json_error('Invalid or expired reset code.');
+  }
+
+  $hash = password_hash($newPassword, PASSWORD_DEFAULT);
+  if ($hash === false) throw new RuntimeException('Could not hash the new password.');
+  recovery_set_password($db, $table, $accountId, $hash);
+  recovery_consume_unused($db, $accountType, $accountId);
+  if (!$db->commit()) throw new RuntimeException('Could not commit password reset.');
+  $started = false;
+} catch (Throwable $error) {
+  if ($started) recovery_rollback($db);
+  error_log('Password reset failed: ' . $error->getMessage());
+  json_error('Unable to process password reset.', 500);
 }
-
-$hash = password_hash($newPassword, PASSWORD_DEFAULT);
-// New password also clears any login lockout so the user can sign in right away.
-$update = $db->prepare("UPDATE {$table} SET password = ?, failed_logins = 0, locked_until = NULL WHERE id = ?");
-if (!$update) json_error('Unable to update password.', 500);
-$update->bind_param('si', $hash, $accountId);
-if (!$update->execute()) json_error('Unable to update password.', 500);
-$update->close();
-
-$used = $db->prepare('UPDATE otp_codes SET used = 1 WHERE id = ?');
-if (!$used) json_error('Password changed, but reset code could not be closed.', 500);
-$otpId = (int)$otpRows[0]['id'];
-$used->bind_param('i', $otpId);
-if (!$used->execute()) json_error('Password changed, but reset code could not be closed.', 500);
-$used->close();
 
 json_success(['message' => 'Your password has been reset. You can now log in.']);
-?>

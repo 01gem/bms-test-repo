@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../common.php';
 session_start();
+enforce_active_session();
 
 $officialSession = !empty($_SESSION['official_id']);
 $residentSession = !empty($_SESSION['resident_id']);

@@ -7,8 +7,20 @@
  */
 
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/../api/_session.php';
 session_start();
 header('Cache-Control: private, no-store');
+$communityAccess = session_revalidate_active();
+if (($communityAccess['error'] ?? null) === 'server') {
+  http_response_code(500);
+  header('Content-Type: text/html; charset=utf-8');
+  echo session_access_failure_html();
+  exit;
+}
+if (empty($communityAccess['ok'])) {
+  header('Location: login.php');
+  exit;
+}
 
 function community_access_page(): void {
   echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Resident access required — BarangayLink</title></head><body><main><h1>Resident access required</h1><p>Sign in with a resident account to view community concerns.</p><p><a href="login.php">Resident login</a></p><p><a href="resident.php">Back</a></p></main></body></html>';

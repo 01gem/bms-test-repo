@@ -7,14 +7,22 @@
  */
 
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/../api/_session.php';
 require_once __DIR__ . '/../api/complaints/_extra_fields.php';
 session_start();
-function e($value) {
-  return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+$residentAccess = session_revalidate_active();
+if (($residentAccess['error'] ?? null) === 'server') {
+  http_response_code(500);
+  header('Content-Type: text/html; charset=utf-8');
+  echo session_access_failure_html();
+  exit;
 }
-if (empty($_SESSION['resident_id'])) {
+if (empty($residentAccess['ok']) || empty($_SESSION['resident_id'])) {
   header('Location: login.php');
   exit;
+}
+function e($value) {
+  return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 $residentId = (int)$_SESSION['resident_id'];
 $residentName = $_SESSION['resident_name'] ?? 'Resident User';

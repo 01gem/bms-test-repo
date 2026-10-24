@@ -51,21 +51,49 @@ $DB_USER = 'root';
 $DB_PASS = '';
 $DB_NAME = 'barangay_system_test_environment';
 
-function get_db() {
+/**
+ * Open the shared database connection.
+ * A failed attempt is never cached. Callers that must not terminate the process
+ * use this function. get_db() keeps the existing die-on-failure behavior.
+ *
+ * @throws RuntimeException when the connection or charset setup fails.
+ */
+function db_connection(): mysqli {
   global $DB_HOST, $DB_USER, $DB_PASS, $DB_NAME;
   static $db = null;
-  if ($db !== null) {
+  if ($db instanceof mysqli) {
     return $db;
   }
+
   // PHP >= 8.1 throws mysqli_sql_exception by default; this codebase checks return
   // values, so keep the return-false behavior.
   mysqli_report(MYSQLI_REPORT_OFF);
-  $db = new mysqli($DB_HOST, $DB_USER, $DB_PASS, $DB_NAME);
-  if ($db->connect_error) {
-    error_log('Database connection failed: ' . $db->connect_error);
+  try {
+    $conn = new mysqli($DB_HOST, $DB_USER, $DB_PASS, $DB_NAME);
+  } catch (Throwable $error) {
+    error_log('Database connection failed: ' . $error->getMessage());
+    throw new RuntimeException('Database connection failed.');
+  }
+  if ($conn->connect_error) {
+    error_log('Database connection failed: ' . $conn->connect_error);
+    throw new RuntimeException('Database connection failed.');
+  }
+  if (!$conn->set_charset('utf8mb4')) {
+    $detail = $conn->error;
+    $conn->close();
+    error_log('Database charset failed: ' . $detail);
+    throw new RuntimeException('Database connection failed.');
+  }
+
+  $db = $conn;
+  return $db;
+}
+
+function get_db() {
+  try {
+    return db_connection();
+  } catch (RuntimeException $error) {
     die('Database connection failed.');
   }
-  $db->set_charset('utf8mb4');
-  return $db;
 }
 ?>

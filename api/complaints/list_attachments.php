@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../common.php';
+require_once __DIR__ . '/_attachments.php';
 session_start();
+enforce_active_session();
 
 $officialSession = !empty($_SESSION['official_id']);
 $residentSession = !empty($_SESSION['resident_id']);
@@ -23,7 +25,7 @@ if (!$officialSession) {
 }
 
 $stmt = $db->prepare(
-  'SELECT id, file_path, mime, byte_size, uploaded_by_type, created_at
+  'SELECT id, mime, byte_size, uploaded_by_type, created_at
      FROM complaint_attachments
     WHERE complaint_id = ? AND deleted_at IS NULL
     ORDER BY created_at ASC, id ASC'
@@ -34,7 +36,7 @@ $stmt->close();
 
 $attachments = array_map(fn(array $r) => [
   'id'               => (int)$r['id'],
-  'url'              => '../' . (string)$r['file_path'],
+  'url'              => complaint_attachment_client_url((int)$r['id']),
   'mime'             => (string)$r['mime'],
   'byte_size'        => (int)$r['byte_size'],
   'uploaded_by_type' => (string)$r['uploaded_by_type'],

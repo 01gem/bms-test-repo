@@ -7,6 +7,7 @@
  */
 
 require_once __DIR__ . '/../common.php';
+require_once __DIR__ . '/_recovery.php';
 
 require_post();
 $input = read_json_input();
@@ -19,39 +20,41 @@ if (!in_array($accountType, ['resident', 'official'], true) || $username === '' 
 }
 
 $db = get_db();
-$table = $accountType === 'resident' ? 'residents' : 'barangay_officials';
-$accountStmt = $db->prepare("SELECT id FROM {$table} WHERE username = ? LIMIT 1");
-if (!$accountStmt) json_error('Unable to verify code.', 500);
-$accountStmt->bind_param('s', $username);
-$accountRows = db_query_all($accountStmt);
-$accountStmt->close();
-if (count($accountRows) === 0) json_error('Invalid or expired code.');
-$accountId = (int)$accountRows[0]['id'];
+$table = recovery_account_table($accountType);
+$started = false;
 
-// Fetch the latest unused, unexpired OTP for the account — do NOT match code in SQL,
-// so wrong guesses are counted against the same row.
-$otpStmt = $db->prepare('SELECT id, code, attempts FROM otp_codes WHERE account_type = ? AND account_id = ? AND used = 0 AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1');
-if (!$otpStmt) json_error('Unable to verify code.', 500);
-$otpStmt->bind_param('si', $accountType, $accountId);
-$otpRows = db_query_all($otpStmt);
-$otpStmt->close();
-if (count($otpRows) === 0) json_error('Invalid or expired code.');
-
-$otpRow = $otpRows[0];
-if ((int)$otpRow['attempts'] >= 5) {
-  json_error('Invalid or expired code.');
-}
-
-if (!hash_equals((string)$otpRow['code'], $code)) {
-  $bump = $db->prepare('UPDATE otp_codes SET attempts = attempts + 1 WHERE id = ?');
-  if ($bump) {
-    $otpId = (int)$otpRow['id'];
-    $bump->bind_param('i', $otpId);
-    $bump->execute();
-    $bump->close();
+try {
+  if (!$db->begin_transaction()) {
+    throw new RuntimeException('Could not start code verification.');
   }
-  json_error('Invalid or expired code.');
+  $started = true;
+  $account = recovery_lock_account($db, $table, $username);
+  if ($account === null) {
+    if (!$db->rollback()) throw new RuntimeException('Could not finish code verification.');
+    $started = false;
+    json_error('Invalid or expired code.');
+  }
+
+  $otp = recovery_latest_code($db, $accountType, (int)$account['id']);
+  if ($otp === null || (int)$otp['attempts'] >= 5) {
+    if (!$db->rollback()) throw new RuntimeException('Could not finish code verification.');
+    $started = false;
+    json_error('Invalid or expired code.');
+  }
+
+  if (!hash_equals((string)$otp['code'], $code)) {
+    recovery_bump_attempt($db, (int)$otp['id']);
+    if (!$db->commit()) throw new RuntimeException('Could not record the code attempt.');
+    $started = false;
+    json_error('Invalid or expired code.');
+  }
+
+  if (!$db->commit()) throw new RuntimeException('Could not finish code verification.');
+  $started = false;
+} catch (Throwable $error) {
+  if ($started) recovery_rollback($db);
+  error_log('Password recovery verify failed: ' . $error->getMessage());
+  json_error('Unable to verify code.', 500);
 }
 
 json_success(['message' => 'Code verified.']);
-?>

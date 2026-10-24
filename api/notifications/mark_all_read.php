@@ -9,6 +9,7 @@
 require_once __DIR__ . '/../common.php';
 header('Content-Type: application/json; charset=utf-8');
 session_start();
+enforce_active_session();
 
 if (empty($_SESSION['resident_id'])) {
     http_response_code(401);

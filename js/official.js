@@ -289,10 +289,10 @@ function renderDashOpenComplaints() {
     <div class="mini-row">
       <div class="mr-icon" style="background:#FEE2E2;color:#EF4444"><i class="fa-solid fa-triangle-exclamation"></i></div>
       <div class="mr-text">
-        <div class="mr-title">${c.cat}</div>
-        <div class="mr-sub">${c.filer} · ${c.loc}</div>
+        <div class="mr-title">${escapeHtml(c.cat)}</div>
+        <div class="mr-sub">${escapeHtml(c.filer)} · ${escapeHtml(c.loc)}</div>
       </div>
-      <span class="status-badge status-${c.status}">${c.status}</span>
+      <span class="status-badge status-${complaintStatusToken(c.status)}">${escapeHtml(c.status)}</span>
     </div>
   `).join('');
 }
@@ -1256,32 +1256,36 @@ function renderComplaintsAdmin(data) {
     el.innerHTML = '<p style="color:var(--text-3);font-size:13px;padding:12px 0">No complaints found.</p>';
     return;
   }
-  el.innerHTML = data.map(c => `
-    <article class="complaint-admin-row" id="comp-${c.ref.replace('#','')}">
+  el.innerHTML = data.map(c => {
+    const domId = complaintDomId(c.id);
+    const preview = String(c.description || '');
+    const previewText = preview.length > 160 ? preview.slice(0, 160).trimEnd() + '…' : preview;
+    return `
+    <article class="complaint-admin-row" id="comp-${escapeHtml(String(c.ref || '').replace(/^#/, ''))}">
       <div class="ca-top">
         <div>
-          <div class="ca-ref">${c.ref} · ${c.filer}</div>
-          <div class="ca-title">${c.cat} — ${c.loc}</div>
+          <div class="ca-ref">${escapeHtml(c.ref)} · ${escapeHtml(c.filer)}</div>
+          <div class="ca-title">${escapeHtml(c.cat)} — ${escapeHtml(c.loc)}</div>
         </div>
-        <span class="status-badge status-${c.status}">${c.status}</span>
+        <span class="status-badge status-${complaintStatusToken(c.status)}">${escapeHtml(c.status)}</span>
       </div>
       <div class="ca-meta">
-        <span><i class="fa-regular fa-calendar"></i> Filed: ${escapeAttribute(c.date)}</span>
+        <span><i class="fa-regular fa-calendar"></i> Filed: ${escapeHtml(c.date)}</span>
         ${severityChip(c.severity)}
         ${complaintCardSlaHtml(c)}
-        ${c.note ? `<span><i class="fa-solid fa-comment"></i> ${escapeAttribute(c.note)}</span>` : ''}
+        ${c.note ? `<span><i class="fa-solid fa-comment"></i> ${escapeHtml(c.note)}</span>` : ''}
       </div>
-      ${c.description ? `<p class="ca-desc">${escapeAttribute(c.description.length > 160 ? c.description.slice(0, 160).trimEnd() + '…' : c.description)}</p>` : ''}
+      ${preview ? `<p class="ca-desc">${escapeHtml(previewText)}</p>` : ''}
       <div class="ca-actions">
         <label class="ca-field">Status
-          <select class="ca-status-select" id="compStatus-${c.id}">
+          <select class="ca-status-select" id="compStatus-${domId}">
             <option value="open"          ${c.status==='open'          ?'selected':''}>Open</option>
             <option value="investigating" ${c.status==='investigating' ?'selected':''}>Investigating</option>
             <option value="resolved"      ${c.status==='resolved'      ?'selected':''}>Resolved</option>
           </select>
         </label>
         <label class="ca-field">Severity
-          <select class="ca-status-select" id="compSeverity-${c.id}">
+          <select class="ca-status-select" id="compSeverity-${domId}">
             <option value="low"      ${c.severity==='low'      ?'selected':''}>Low</option>
             <option value="medium"   ${c.severity==='medium'   ?'selected':''}>Medium</option>
             <option value="high"     ${c.severity==='high'     ?'selected':''}>High</option>
@@ -1289,15 +1293,16 @@ function renderComplaintsAdmin(data) {
           </select>
         </label>
         <label class="ca-field ca-field-note">Official note
-          <input type="text" class="ca-note-input" id="compNote-${c.id}" placeholder="Add official note…" value="${c.note}" />
+          <input type="text" class="ca-note-input" id="compNote-${domId}" placeholder="Add official note…" value="${escapeHtml(c.note)}" />
         </label>
         <div class="ca-action-btns">
-          <button class="btn-action resolve" onclick="updateComplaint(${c.id})">Save</button>
-          <button class="btn-action view" onclick="viewComplaint(${c.id})">View</button>
+          <button class="btn-action resolve" onclick="updateComplaint(${domId})">Save</button>
+          <button class="btn-action view" onclick="viewComplaint(${domId})">View</button>
         </div>
       </div>
     </article>
-  `).join('');
+  `;
+  }).join('');
 }
 
 // Keep in sync with the identical severityChip() in js/resident.js.
@@ -1498,7 +1503,7 @@ function syncOpenComplaintResponse(id) {
   const statusNode = box.querySelector('[data-complaint-status]');
   if (statusNode) {
     statusNode.textContent = updated.status;
-    statusNode.className = `status-badge status-${updated.status}`;
+    statusNode.className = `status-badge status-${complaintStatusToken(updated.status)}`;
   }
   const html = complaintResidentResponseSectionHtml(updated);
   const existing = box.querySelector('[data-resident-response]');
@@ -2230,7 +2235,7 @@ function viewComplaint(id) {
         ${profileDetailField('Category', c.cat)}
         ${profileDetailField('Location', c.loc)}
         ${profileDetailField('Date Filed', c.date)}
-        <div class="detail-field"><dt>Status</dt><dd><span class="status-badge status-${escapeAttribute(c.status)}" data-complaint-status>${escapeHtml(c.status)}</span></dd></div>
+        <div class="detail-field"><dt>Status</dt><dd><span class="status-badge status-${complaintStatusToken(c.status)}" data-complaint-status>${escapeHtml(c.status)}</span></dd></div>
         <div class="detail-field"><dt>Severity</dt><dd>${severityChip(c.severity)}</dd></div>
       </div>
       <div class="complaint-detail-copy">
@@ -4590,6 +4595,16 @@ function showModal(title, body) {
   document.getElementById('actionModal').classList.add('show');
 }
 function closeModal() { document.getElementById('actionModal').classList.remove('show'); }
+
+function complaintStatusToken(status) {
+  const token = String(status || '').toLowerCase();
+  return ['open', 'investigating', 'resolved'].includes(token) ? token : 'unknown';
+}
+
+function complaintDomId(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? String(n) : '0';
+}
 
 function escapeHtml(value) {
   return String(value ?? '')

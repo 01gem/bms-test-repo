@@ -57,8 +57,30 @@ See the LICENSE file in the project root for the full text.
        HTTPSMS_API_KEY=...             # required for SMS features
        HTTPSMS_FROM_NUMBER=+63...
        HTTPSMS_SIM_SLOT=SIM1
+       COMPLAINT_ATTACHMENT_STORAGE_DIR=C:/laragon/private/Capstone-System-COPY/complaint_attachments
 
-4. Serve the project root with any PHP-capable web server. The default
+   `COMPLAINT_ATTACHMENT_STORAGE_DIR` is required for new complaint photos.
+   It must be an absolute directory outside this project and outside the
+   web server's document root. The example above sits outside
+   `C:/laragon/www`. Create the directory and make it writable by PHP.
+   Do not point it at `complaint_attachments/` inside this project. If the
+   setting is missing, unreadable, or inside a served tree, new uploads
+   fail and are not stored in the public project tree. Older rows shaped
+   `complaint_attachments/{complaint_id}/{uuid}.jpg|png` stay where they
+   are and are readable only through `api/complaints/view_attachment.php`.
+
+4. Block direct web access to legacy evidence. `complaint_attachments/.htaccess`
+   denies all access on Apache 2.4 (`Require all denied`). Confirm a copied
+   legacy URL returns 403 or 404, including a soft-deleted file. PHP's
+   built-in server ignores `.htaccess`, so that check has to run on the
+   deployed server. Nginx needs an equivalent denial, for example
+   `location ^~ /complaint_attachments/ { deny all; return 403; }`. IIS needs
+   a location rule that denies all users for `complaint_attachments`. The
+   private storage directory must also stay outside every static alias.
+   A denial rule that the server does not actually enforce leaves the old
+   files readable by URL.
+
+5. Serve the project root with any PHP-capable web server. The default
    admin account from the seed is `gem` / `admin123`; change it before
    exposing the app.
 

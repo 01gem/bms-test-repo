@@ -4,14 +4,19 @@
  * Copyright (C) 2026 Jun Gem Riege M. Dulduco
  * Licensed under the GNU General Public License v3.0 (or later).
  *
- * Requires api/common.php to be loaded first (uses get_db(), db_query_all(),
- * normalize_ph_phone()). Never throws. All callers log through sms_log.
+ * Requires api/common.php to be loaded first (uses db_connection(),
+ * normalize_ph_phone()). Never throws. Resident lookups do not use
+ * db_query_all(), so a failed lookup cannot exit an already-saved caller.
+ * All callers log through sms_log.
  */
 
 /**
  * Send an SMS via httpSMS. Never throws.
+ * A test process may define send_sms() before this file loads.
+ * HTTP requests cannot do that.
  * @return array{ok:bool,error:string,message_id:?string}
  */
+if (!function_exists('send_sms')) {
 function send_sms(string $to, string $content): array {
   $apiKey = getenv('HTTPSMS_API_KEY') ?: '';
   $fromNumber = getenv('HTTPSMS_FROM_NUMBER') ?: '';
@@ -74,6 +79,7 @@ function send_sms(string $to, string $content): array {
   $messageId = is_array($decoded) && isset($decoded['id']) ? (string)$decoded['id'] : null;
   return ['ok' => true, 'error' => '', 'message_id' => $messageId];
 }
+}
 
 /**
  * Fire-and-forget SMS to a resident. Runs the decision tree:
@@ -86,6 +92,54 @@ function send_sms(string $to, string $content): array {
  * @param string|null $toOverride  Skip the DB contact lookup (used by notify_ready).
  * @return array{status:string,reason:string}
  */
+/**
+ * Checked resident-notification lookup. Null means the query failed.
+ * An empty array means the query succeeded and returned no row.
+ *
+ * @param array<int,int|string> $values
+ * @return array<string,mixed>|null
+ */
+function sms_resident_query(mysqli $db, string $sql, string $types, array $values, string $logLabel): ?array {
+  $stmt = null;
+  try {
+    $stmt = $db->prepare($sql);
+    if (!$stmt) {
+      error_log($logLabel . ' prepare failed: ' . $db->error);
+      return null;
+    }
+    if ($types !== '') {
+      $bound = [];
+      foreach ($values as $index => $value) {
+        $bound[$index] = $value;
+      }
+      $args = [$types];
+      foreach ($bound as $index => $_) {
+        $args[] = &$bound[$index];
+      }
+      if (!call_user_func_array([$stmt, 'bind_param'], $args)) {
+        error_log($logLabel . ' bind failed: ' . $stmt->error);
+        return null;
+      }
+    }
+    if (!$stmt->execute()) {
+      error_log($logLabel . ' execute failed: ' . $stmt->error);
+      return null;
+    }
+    $result = $stmt->get_result();
+    if (!$result) {
+      error_log($logLabel . ' result failed: ' . $stmt->error);
+      return null;
+    }
+    $row = $result->fetch_assoc();
+    return $row ?: [];
+  } catch (Throwable $error) {
+    error_log($logLabel . ' failed: ' . $error->getMessage());
+    return null;
+  } finally {
+    if ($stmt instanceof mysqli_stmt) $stmt->close();
+  }
+}
+
 function notify_resident(
   int $residentId,
   string $endpoint,
@@ -93,72 +147,95 @@ function notify_resident(
   string $prefKey = 'complaints_enabled',
   ?string $toOverride = null
 ): array {
-  $db = get_db();
-
   $apiKey = getenv('HTTPSMS_API_KEY') ?: '';
   $fromNumber = getenv('HTTPSMS_FROM_NUMBER') ?: '';
-  if ($apiKey === '' || $fromNumber === '') {
-    sms_log_write($db, $residentId, $endpoint, '', 'skipped', 'sms_not_configured');
-    return ['status' => 'skipped', 'reason' => 'SMS is not configured on this server.'];
-  }
-
-  $toRaw = trim((string)($toOverride ?? ''));
-  if ($toRaw === '') {
-    $stmt = $db->prepare('SELECT contact FROM residents WHERE id = ? LIMIT 1');
-    if (!$stmt) {
-      sms_log_write($db, $residentId, $endpoint, '', 'skipped', 'db_prepare_failed');
-      return ['status' => 'skipped', 'reason' => 'Contact lookup failed.'];
+  try {
+    $db = db_connection();
+  } catch (Throwable $error) {
+    error_log('notify_resident connection failed: ' . $error->getMessage());
+    if ($apiKey === '' || $fromNumber === '') {
+      return ['status' => 'skipped', 'reason' => 'SMS is not configured on this server.'];
     }
-    $stmt->bind_param('i', $residentId);
-    $rows = db_query_all($stmt);
-    $stmt->close();
-    $toRaw = trim((string)($rows[0]['contact'] ?? ''));
-  }
-  if ($toRaw === '') {
-    sms_log_write($db, $residentId, $endpoint, '', 'skipped', 'no_contact');
-    return ['status' => 'skipped', 'reason' => 'Resident has no contact number.'];
+    return ['status' => 'skipped', 'reason' => 'SMS notification could not be prepared.'];
   }
 
-  $to = normalize_ph_phone($toRaw);
-  if ($to === null) {
-    sms_log_write($db, $residentId, $endpoint, $toRaw, 'skipped', 'invalid_contact');
-    return ['status' => 'skipped', 'reason' => 'Resident contact number is invalid.'];
-  }
+  try {
+    if ($apiKey === '' || $fromNumber === '') {
+      sms_log_write($db, $residentId, $endpoint, '', 'skipped', 'sms_not_configured');
+      return ['status' => 'skipped', 'reason' => 'SMS is not configured on this server.'];
+    }
 
-  $col = in_array($prefKey, ['complaints_enabled','requests_enabled','announcements_enabled'], true)
-    ? $prefKey : 'complaints_enabled';
-  $prefOk = true;
-  $pStmt = $db->prepare("SELECT `{$col}` AS enabled FROM resident_sms_preferences WHERE resident_id = ? LIMIT 1");
-  if ($pStmt) {
-    $pStmt->bind_param('i', $residentId);
-    $pRows = db_query_all($pStmt);
-    $pStmt->close();
-    if ($pRows) $prefOk = (int)($pRows[0]['enabled'] ?? 1) === 1;
-  }
-  if (!$prefOk) {
-    sms_log_write($db, $residentId, $endpoint, $to, 'skipped', 'pref_off');
-    return ['status' => 'skipped', 'reason' => 'Resident has disabled this SMS category.'];
-  }
+    $toRaw = trim((string)($toOverride ?? ''));
+    if ($toRaw === '') {
+      $contact = sms_resident_query(
+        $db,
+        'SELECT contact FROM residents WHERE id = ? LIMIT 1',
+        'i',
+        [$residentId],
+        'notify_resident contact'
+      );
+      if ($contact === null) {
+        sms_log_write($db, $residentId, $endpoint, '', 'skipped', 'contact_lookup_failed');
+        return ['status' => 'skipped', 'reason' => 'Contact lookup failed.'];
+      }
+      $toRaw = trim((string)($contact['contact'] ?? ''));
+    }
+    if ($toRaw === '') {
+      sms_log_write($db, $residentId, $endpoint, '', 'skipped', 'no_contact');
+      return ['status' => 'skipped', 'reason' => 'Resident has no contact number.'];
+    }
 
-  $cStmt = $db->prepare("SELECT COUNT(*) AS c FROM sms_log WHERE resident_id = ? AND endpoint = ? AND status = 'sent' AND created_at > NOW() - INTERVAL 1 DAY");
-  if ($cStmt) {
-    $cStmt->bind_param('is', $residentId, $endpoint);
-    $cRows = db_query_all($cStmt);
-    $cStmt->close();
-    if ((int)($cRows[0]['c'] ?? 0) >= 5) {
+    $to = normalize_ph_phone($toRaw);
+    if ($to === null) {
+      sms_log_write($db, $residentId, $endpoint, $toRaw, 'skipped', 'invalid_contact');
+      return ['status' => 'skipped', 'reason' => 'Resident contact number is invalid.'];
+    }
+
+    $col = in_array($prefKey, ['complaints_enabled', 'requests_enabled', 'announcements_enabled'], true)
+      ? $prefKey : 'complaints_enabled';
+    $pref = sms_resident_query(
+      $db,
+      "SELECT `{$col}` AS enabled FROM resident_sms_preferences WHERE resident_id = ? LIMIT 1",
+      'i',
+      [$residentId],
+      'notify_resident preference'
+    );
+    if ($pref === null) {
+      sms_log_write($db, $residentId, $endpoint, $to, 'skipped', 'preference_lookup_failed');
+      return ['status' => 'skipped', 'reason' => 'SMS preference lookup failed.'];
+    }
+    if ($pref !== [] && (int)($pref['enabled'] ?? 1) !== 1) {
+      sms_log_write($db, $residentId, $endpoint, $to, 'skipped', 'pref_off');
+      return ['status' => 'skipped', 'reason' => 'Resident has disabled this SMS category.'];
+    }
+
+    $cap = sms_resident_query(
+      $db,
+      "SELECT COUNT(*) AS c FROM sms_log WHERE resident_id = ? AND endpoint = ? AND status = 'sent' AND created_at > NOW() - INTERVAL 1 DAY",
+      'is',
+      [$residentId, $endpoint],
+      'notify_resident cap'
+    );
+    if ($cap === null || !array_key_exists('c', $cap)) {
+      sms_log_write($db, $residentId, $endpoint, $to, 'skipped', 'cap_lookup_failed');
+      return ['status' => 'skipped', 'reason' => 'SMS cap lookup failed.'];
+    }
+    if ((int)$cap['c'] >= 5) {
       sms_log_write($db, $residentId, $endpoint, $to, 'skipped', 'daily_cap');
       return ['status' => 'skipped', 'reason' => 'Daily SMS limit reached for this resident and event type.'];
     }
-  }
 
-  $result = send_sms($to, $body);
-
-  if ($result['ok']) {
-    sms_log_write($db, $residentId, $endpoint, $to, 'sent', null, $result['message_id'] ?? null);
-    return ['status' => 'sent', 'reason' => 'SMS sent.'];
+    $result = send_sms($to, $body);
+    if (!empty($result['ok'])) {
+      sms_log_write($db, $residentId, $endpoint, $to, 'sent', null, $result['message_id'] ?? null);
+      return ['status' => 'sent', 'reason' => 'SMS sent.'];
+    }
+    sms_log_write($db, $residentId, $endpoint, $to, 'failed', $result['error'] ?? 'unknown', null);
+    return ['status' => 'failed', 'reason' => 'SMS send failed: ' . ($result['error'] ?? 'unknown')];
+  } catch (Throwable $error) {
+    error_log('notify_resident failed: ' . $error->getMessage());
+    return ['status' => 'failed', 'reason' => 'SMS notification could not be prepared.'];
   }
-  sms_log_write($db, $residentId, $endpoint, $to, 'failed', $result['error'] ?? 'unknown', null);
-  return ['status' => 'failed', 'reason' => 'SMS send failed: ' . ($result['error'] ?? 'unknown')];
 }
 
 /** Append-only sms_log writer. Never throws. */

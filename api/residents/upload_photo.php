@@ -8,6 +8,7 @@
 
 require_once __DIR__ . '/../common.php';
 session_start();
+enforce_active_session();
 
 if (empty($_SESSION['resident_id']) || !empty($_SESSION['official_id'])) {
   json_error('Resident access required.', 403);

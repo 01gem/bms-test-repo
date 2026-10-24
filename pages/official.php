@@ -7,8 +7,16 @@
  */
 
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/../api/_session.php';
 session_start();
-if (empty($_SESSION['official_id'])) {
+$officialAccess = session_revalidate_active();
+if (($officialAccess['error'] ?? null) === 'server') {
+  http_response_code(500);
+  header('Content-Type: text/html; charset=utf-8');
+  echo session_access_failure_html();
+  exit;
+}
+if (empty($officialAccess['ok']) || empty($_SESSION['official_id'])) {
   header('Location: login.php');
   exit;
 }
