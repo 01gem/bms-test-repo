@@ -4128,7 +4128,7 @@ function initComplaintsAdmin() {
   document.getElementById('compStatusFilter')?.addEventListener('change', refreshComplaintsAdmin);
 }
 
-const POLL_INTERVAL_MS = 20000;
+const POLL_INTERVAL_MS = 5000;
 const POLL_BACKOFF_MAX_MS = 120000;
 
 let pollTimer = null;
