@@ -21,8 +21,15 @@ if (!isset($_FILES['photo']) || !is_array($_FILES['photo'])) {
   json_error('Please select a photo.');
 }
 $upload = $_FILES['photo'];
-if (($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-  json_error('Photo upload failed.');
+$uploadError = (int)($upload['error'] ?? UPLOAD_ERR_NO_FILE);
+if ($uploadError !== UPLOAD_ERR_OK) {
+  $message = match ($uploadError) {
+    UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => 'Photo exceeds the server upload limit.',
+    UPLOAD_ERR_PARTIAL => 'Photo upload was interrupted. Please try again.',
+    UPLOAD_ERR_NO_FILE => 'Please select a photo.',
+    default => 'Photo upload failed.',
+  };
+  json_error($message, 422);
 }
 if (($upload['size'] ?? 0) > 50 * 1024 * 1024) {
   json_error('Photo must be 50MB or smaller.', 422);

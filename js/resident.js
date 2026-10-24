@@ -565,10 +565,11 @@ function renderAttachmentsHtml(attachments) {
   if (!attachments.length) {
     return '<p class="complaint-meta">No photos attached.</p>';
   }
-  return '<div class="complaint-photos">' + attachments.map(a => {
+  return '<div class="complaint-photos" aria-label="Complaint photos">' + attachments.map((a, index) => {
     const href = escapeHtml(a.url);
-    return `<a href="${href}" target="_blank" rel="noopener" title="Open full size">
-      <img src="${href}" alt="Complaint photo" />
+    const label = `Photo ${index + 1}`;
+    return `<a class="complaint-photo-link" href="${href}" target="_blank" rel="noopener" title="Open ${label}">
+      ${label}
     </a>`;
   }).join('') + '</div>';
 }

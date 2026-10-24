@@ -30,6 +30,8 @@ let DOC_REQUESTS = [];
 let COMPLAINTS_ADMIN = [];
 let officialComplaintDetailSeq = 0;
 let complaintListSeq = 0;
+let complaintMutationEpoch = 0;
+let complaintMutationInFlight = false;
 const complaintAssignmentHold = new Map();
 const complaintSharingHold = new Map();
 let sharingLoadSeq = 0;
@@ -1348,10 +1350,11 @@ function renderAttachmentsHtml(attachments) {
   if (!attachments.length) {
     return '<p class="complaint-meta">No photos attached.</p>';
   }
-  return '<div class="complaint-photos">' + attachments.map(a => {
+  return '<div class="complaint-photos" aria-label="Complaint photos">' + attachments.map((a, index) => {
     const href = escapeHtml(a.url);
-    return `<a href="${href}" target="_blank" rel="noopener" title="Open full size">
-      <img src="${href}" alt="Complaint photo" />
+    const label = `Photo ${index + 1}`;
+    return `<a class="complaint-photo-link" href="${href}" target="_blank" rel="noopener" title="Open ${label}">
+      ${label}
     </a>`;
   }).join('') + '</div>';
 }
@@ -2297,6 +2300,8 @@ async function updateComplaint(id) {
   if (!c) return;
   const status = document.getElementById(`compStatus-${id}`).value;
   const severity = document.getElementById(`compSeverity-${id}`)?.value || c.severity || 'medium';
+  const mutationEpoch = ++complaintMutationEpoch;
+  complaintMutationInFlight = true;
   try {
     const resolving = status === 'resolved';
     const data = await fetchJson(`${API_BASE}/complaints/${resolving ? 'notify_resolved' : 'update_status'}.php`, {
@@ -2317,6 +2322,10 @@ async function updateComplaint(id) {
     }
   } catch (err) {
     showToastAdmin('Update Failed', err.message);
+  } finally {
+    if (mutationEpoch === complaintMutationEpoch) {
+      complaintMutationInFlight = false;
+    }
   }
 }
 
@@ -3023,6 +3032,7 @@ async function loadRequests() {
 }
 
 async function loadComplaints(options = {}) {
+  const loadEpoch = complaintMutationEpoch;
   const seq = ++complaintListSeq;
   try {
     await fetchJson(`${API_BASE}/complaints/check_sla.php`, {
@@ -3035,7 +3045,7 @@ async function loadComplaints(options = {}) {
   }
   const data = await fetchJson(`${API_BASE}/complaints/list.php`);
   const rows = (data.complaints || []).map(mapComplaintRow);
-  if (seq !== complaintListSeq) return null;
+  if (seq !== complaintListSeq || loadEpoch !== complaintMutationEpoch) return null;
   COMPLAINTS_ADMIN = rows;
   if (options.render !== false) refreshComplaintsAdmin();
   return rows;
@@ -4150,7 +4160,7 @@ async function pollOfficialUpdates() {
         .then(d => { DOC_REQUESTS = (d.requests || []).map(mapRequestRow); })
     );
   }
-  if (activeSection === 'tab-complaints' || activeSection === 'tab-dashboard') {
+  if (!complaintMutationInFlight && (activeSection === 'tab-complaints' || activeSection === 'tab-dashboard')) {
     fetches.push(loadComplaints());
   }
   if (!fetches.length) { scheduleNextPoll(); return; }
