@@ -25,7 +25,7 @@ if (is_string($testStorage) && $testStorage !== '') {
   $_ENV['COMPLAINT_ATTACHMENT_STORAGE_DIR'] = $testStorage;
   $_SERVER['COMPLAINT_ATTACHMENT_STORAGE_DIR'] = $testStorage;
 }
-require_once dirname(__DIR__, 2) . '/db.php';
+require_once dirname(__DIR__, 3) . '/db.php';
 $configured = getenv('BARANGAY_DB_NAME');
 if (is_string($configured) && preg_match('/^[A-Za-z0-9_]+$/', $configured) === 1) {
   $DB_NAME = $configured;

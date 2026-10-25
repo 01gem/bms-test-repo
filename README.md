@@ -124,7 +124,7 @@ an engine bug, not a data bug.
   a cross-cutting change (every POST endpoint plus a middleware check)
   and is not in scope for this deployment pass.
 - No migration runner. `database.sql` is the fresh-install schema; additive
-  upgrade scripts live in `database/migrations/`. If upgrading a database built with the old `migration_*.sql`
+  upgrade scripts live in `project-support/migrations/`. If upgrading a database built with the old `migration_*.sql`
   chain, apply those migrations once before deleting them; then
   `database.sql` becomes the fresh-install entry point.
 - Document-specific extra fields (e.g. civil_status for Barangay
@@ -140,12 +140,12 @@ an engine bug, not a data bug.
 ## Document request concurrency rollout
 
 Existing installations must apply the additive request migration before enabling
-the updated handlers. See [rollout, dispatch/recovery and test evidence](docs/request-concurrency.md).
+the updated handlers. See [rollout, dispatch/recovery and test evidence](project-support/docs/request-concurrency.md).
 The consolidated schema remains the entry point for fresh installations.
-The [local controlled rollout and final acceptance](docs/request-rollout-acceptance.md)
+The [local controlled rollout and final acceptance](project-support/docs/request-rollout-acceptance.md)
 have passed; the local issue is closed.
-Run `python scripts/update-source-code.py` to refresh the local source text snapshot.
-See [packaging and maintenance](docs/maintenance.md) for runtime-only deployment
+Run `python project-support/scripts/update-source-code.py` to refresh the local source text snapshot.
+See [packaging and maintenance](project-support/docs/maintenance.md) for runtime-only deployment
 ZIPs, scheduled log rotation, protected backup retention and cleanup verification.
 
 ## License

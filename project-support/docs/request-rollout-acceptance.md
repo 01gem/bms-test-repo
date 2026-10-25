@@ -26,7 +26,7 @@ was removed afterward; backups remain intact. Paused SQL SHA256:
 All document-request mutation routes, including resident request creation, were
 paused by a temporary Apache rule, verified with HTTP 503. There was no existing
 pickup dispatcher or in-flight request transaction. Migration
-`database/migrations/20261025_request_concurrency.sql` was applied **once**, at
+`project-support/migrations/20261025_request_concurrency.sql` was applied **once**, at
 **25 October 2026, 18:22:59 PHT**, after checking its columns/tables were absent.
 Migration SHA256:
 `cee64268842695bf39d3b36dc6261ddf4679da266ffcb5169b5a1270f91f71b4`.
@@ -55,7 +55,7 @@ Persistent operational files are outside the web root:
 - `C:\laragon\var\BarangayLink\Capstone-System-COPY\dispatcher-config.json`
 - `C:\laragon\var\BarangayLink\Capstone-System-COPY\logs\dispatcher-runs.jsonl`
 
-The wrapper now runs normal `scripts/dispatch-request-notices.php` using Laragon
+The wrapper now runs normal `project-support/scripts/dispatch-request-notices.php` using Laragon
 PHP 8.3.30; configuration is **live**. Acceptance used a private provider mock that
 refused nondesignated work. The mock bootstrap was removed after verification.
 The task XML is retained with the backup.

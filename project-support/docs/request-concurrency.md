@@ -78,7 +78,7 @@ Physical disk loss/corruption and cross-system durability are outside this guara
    writers stopped throughout the migration/backend replacement; do not run old
    handlers against a partially upgraded deployment.
 2. Select the existing application database and apply
-   `database/migrations/20261025_request_concurrency.sql` **once**. Do not import
+   `project-support/migrations/20261025_request_concurrency.sql` **once**. Do not import
    `database/database.sql` into an existing installation. MySQL DDL is not one
    atomic transaction: inspect migration state if interrupted before proceeding.
    Existing records/paths/audits are retained. Old Ready rows receive cycle 1 and
@@ -98,12 +98,12 @@ Physical disk loss/corruption and cross-system durability are outside this guara
    and `uncertain` events. Concurrent invocations are safe.
 
 ```powershell
-php scripts/dispatch-request-notices.php
-php scripts/dispatch-request-notices.php reconcile 123 sent "Operator name; provider message ID and evidence"
-php scripts/dispatch-request-notices.php reconcile 123 failed "Operator name; verified no provider acceptance"
-php scripts/cleanup-request-artifacts.php
+php project-support/scripts/dispatch-request-notices.php
+php project-support/scripts/dispatch-request-notices.php reconcile 123 sent "Operator name; provider message ID and evidence"
+php project-support/scripts/dispatch-request-notices.php reconcile 123 failed "Operator name; verified no provider acceptance"
+php project-support/scripts/cleanup-request-artifacts.php
 # Inspect the dry run before removing confirmed failed, unreferenced files:
-php scripts/cleanup-request-artifacts.php --apply
+php project-support/scripts/cleanup-request-artifacts.php --apply
 ```
 
 The dispatcher durably marks `sending` before the provider call and records
@@ -150,14 +150,14 @@ calls are replaced by in-process mocks or disabled credentials/cURL.
 
 | Command | Result |
 | --- | --- |
-| `php tests/request-concurrency/baseline.php` | Two original SQL races reproduced in isolation |
-| `php tests/request-concurrency/run.php` | 72 passed, 0 failed |
-| `node tests/request-concurrency/frontend.js` | 14 passed, 0 failed |
-| `node tests/review-2026-10-24/render-check.js` | 131 passed, 0 failed |
-| `php tests/complaint-interface/storage-config-check.php` | 9 passed, 0 failed |
-| `php tests/review-2026-10-24/run.php` | 117 passed, 0 failed; application row counts unchanged |
+| `php project-support/tests/request-concurrency/baseline.php` | Two original SQL races reproduced in isolation |
+| `php project-support/tests/request-concurrency/run.php` | 72 passed, 0 failed |
+| `node project-support/tests/request-concurrency/frontend.js` | 14 passed, 0 failed |
+| `node project-support/tests/review-2026-10-24/render-check.js` | 131 passed, 0 failed |
+| `php project-support/tests/complaint-interface/storage-config-check.php` | 9 passed, 0 failed |
+| `php project-support/tests/review-2026-10-24/run.php` | 117 passed, 0 failed; application row counts unchanged |
 | `php -l` on changed/new PHP sources | 16 files, no syntax errors |
-| `node --check js/official.js` and `node --check tests/request-concurrency/frontend.js` | Passed |
+| `node --check js/official.js` and `node --check project-support/tests/request-concurrency/frontend.js` | Passed |
 | `git diff --check` | Passed |
 
 The baseline reproduced Paid overwritten by Waived with overlapping connections

@@ -7,7 +7,7 @@ $outputLines = @()
 $maintenanceLines = @()
 try {
     if ($configuration.mode -eq 'live') {
-        $entry = Join-Path $configuration.appRoot 'scripts\dispatch-request-notices.php'
+        $entry = Join-Path $configuration.appRoot 'project-support\scripts\dispatch-request-notices.php'
     } elseif ($configuration.mode -eq 'paused') {
         $code = 0
         $outputLines = @('Dispatcher paused by operator.')
@@ -26,7 +26,7 @@ try {
 # Retention failures cannot change the result of an already committed dispatch.
 # Backups are never touched by this scheduled invocation.
 try {
-    $maintenance = Join-Path $configuration.appRoot 'scripts\maintain-request-storage.py'
+    $maintenance = Join-Path $configuration.appRoot 'project-support\scripts\maintain-request-storage.py'
     $logDirectory = Split-Path -Parent $configuration.logFile
     $maintenanceLines = @(& $configuration.pythonExe -B $maintenance --apply --logs-only --log-root $logDirectory 2>&1 | ForEach-Object { $_.ToString() })
     $maintenanceCode = $LASTEXITCODE

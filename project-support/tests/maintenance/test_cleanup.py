@@ -9,7 +9,7 @@ import unittest
 from unittest import mock
 import zipfile
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def load(name, path):
@@ -19,8 +19,8 @@ def load(name, path):
     return module
 
 
-package = load('deployment', 'scripts/build-deployment.py')
-storage = load('storage', 'scripts/maintain-request-storage.py')
+package = load('deployment', 'project-support/scripts/build-deployment.py')
+storage = load('storage', 'project-support/scripts/maintain-request-storage.py')
 
 
 class CleanupSafety(unittest.TestCase):
@@ -49,11 +49,11 @@ class CleanupSafety(unittest.TestCase):
     def test_package_omits_tests_evidence_secrets_and_uploaded_documents(self):
         for name in ['tests/request-concurrency/run.php', 'docs/evidence.jpg', '.env', 'source-code.txt',
                      'generated_documents/existing.pdf', 'profile_img/residents/private.jpg',
-                     'complaint_attachments/1/photo.png', 'api/.env.local', 'scripts/update-source-code.py']:
+                     'complaint_attachments/1/photo.png', 'api/.env.local', 'project-support/scripts/update-source-code.py']:
             self.assertFalse(package.include_file(name), name)
         for name in ['api/requests/_workflow.php', 'api/requests/_generation.php', 'api/requests/_dispatch.php',
-                     'database/migrations/20261025_request_concurrency.sql', 'document_templates/template.docx',
-                     'generated_documents/.htaccess', 'scripts/dispatch-request-notices.php', 'js/official.js']:
+                     'project-support/migrations/20261025_request_concurrency.sql', 'document_templates/template.docx',
+                     'generated_documents/.htaccess', 'project-support/scripts/dispatch-request-notices.php', 'js/official.js']:
             self.assertTrue(package.include_file(name), name)
 
     def test_package_preview_writes_nothing_and_archive_contains_only_runtime(self):

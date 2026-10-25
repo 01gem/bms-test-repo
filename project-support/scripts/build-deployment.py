@@ -4,8 +4,8 @@ from pathlib import Path, PurePosixPath
 import subprocess
 import zipfile
 
-ROOT = Path(__file__).resolve().parent.parent
-RUNTIME_ROOTS = {'api', 'css', 'database', 'document_templates', 'images', 'js', 'pages', 'scripts'}
+ROOT = Path(__file__).resolve().parents[2]
+RUNTIME_ROOTS = {'api', 'css', 'database', 'document_templates', 'images', 'js', 'pages'}
 ROOT_FILES = {'db.php', 'index.php', 'logout.php', 'LICENSE'}
 RUNTIME_SCRIPTS = {'dispatch-request-notices.php', 'cleanup-request-artifacts.php', 'maintain-request-storage.py', 'run-pickup-dispatcher.ps1'}
 SCAFFOLD_ROOTS = {'generated_documents', 'profile_img', 'complaint_attachments'}
@@ -21,13 +21,23 @@ def include_file(name):
         return parts[-1] in {'.htaccess', 'README.txt'}
     if len(parts) == 1:
         return name in ROOT_FILES
+    if len(parts) == 3 and parts[:2] == ('project-support', 'scripts'):
+        return parts[-1] in RUNTIME_SCRIPTS
+    if len(parts) == 3 and parts[:2] == ('project-support', 'migrations'):
+        return True
     if parts[0] not in RUNTIME_ROOTS:
         return False
-    if parts[0] == 'scripts':
-        return len(parts) == 2 and parts[-1] in RUNTIME_SCRIPTS
     if parts[0] == 'document_templates':
         return parts[-1].endswith('.docx') or parts[-1] in {'.htaccess', 'README.txt'}
     return not name.endswith(('.log', '.jsonl', '.pyc', '.zip'))
+
+
+def archive_name(name):
+    if name.startswith('project-support/scripts/'):
+        return 'scripts/' + name[len('project-support/scripts/'):]
+    if name.startswith('project-support/migrations/'):
+        return 'database/migrations/' + name[len('project-support/migrations/'):]
+    return name
 
 
 def build(output=None, list_files=False):
@@ -46,7 +56,7 @@ def build(output=None, list_files=False):
         # Exclusive creation protects an existing package from accidental replacement.
         with zipfile.ZipFile(output, 'x', compression=zipfile.ZIP_DEFLATED) as archive:
             for name in files:
-                archive.write(ROOT / name, name)
+                archive.write(ROOT / name, archive_name(name))
     if list_files:
         print('\n'.join(files))
     print(f'{"Built" if output else "Preview"}: {len(files)} runtime files; tests, evidence, .env files, uploads and source snapshot excluded.')

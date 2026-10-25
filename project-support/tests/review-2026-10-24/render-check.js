@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const root = path.resolve(__dirname, '..', '..');
+const root = path.resolve(__dirname, '..', '..', '..');
 const probe = '<em data-review-probe>text</em>';
 const note = 'He said "no" ' + probe;
 let passed = 0;

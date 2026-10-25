@@ -52,7 +52,7 @@ complaint_attachments/*
 source-code.txt
 
 # Generated regression-server sessions and local build output.
-/tests/review-2026-10-24/server.json
+/project-support/tests/review-2026-10-24/server.json
 /dist/
 __pycache__/
 *.pyc

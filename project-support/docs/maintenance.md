@@ -11,7 +11,7 @@ screenshots were archived outside the served workspace, then removed from the
 project. The final migrated-installation screenshot remains in this directory.
 Historical links now point to that final evidence.
 
-Generated `tests/review-2026-10-24/server.json` is no longer tracked. It contains
+Generated `project-support/tests/review-2026-10-24/server.json` is no longer tracked. It contains
 temporary session cookies, so the runner regenerates it locally and Git ignores
 it. `server.example.json` documents the shape with no usable credentials. The
 example is not a working test configuration; run the PHP suite to create one.
@@ -21,9 +21,9 @@ example is not a working test configuration; run the PHP suite to create one.
 Preview a runtime package without creating files:
 
 ```powershell
-python scripts/build-deployment.py
-python scripts/build-deployment.py --list
-python scripts/build-deployment.py --output C:/laragon/backups/BarangayLink/deployment-packages/barangaylink.zip
+python project-support/scripts/build-deployment.py
+python project-support/scripts/build-deployment.py --list
+python project-support/scripts/build-deployment.py --output C:/laragon/backups/BarangayLink/deployment-packages/barangaylink.zip
 ```
 
 The builder reads current Git-listed tracked/untracked source files. It includes
@@ -40,7 +40,7 @@ in runtime source files.
 
 The installed dispatcher wrapper invokes logs-only maintenance after dispatch.
 Its configuration includes an explicit Python executable path. The versioned
-wrapper source is `scripts/run-pickup-dispatcher.ps1`; its installed copy remains
+wrapper source is `project-support/scripts/run-pickup-dispatcher.ps1`; its installed copy remains
 `C:/laragon/var/BarangayLink/Capstone-System-COPY/Run-PickupDispatcher.ps1`.
 The task's cadence and SMS behavior are unchanged.
 
@@ -53,9 +53,9 @@ The task's cadence and SMS behavior are unchanged.
 Backups are preview-only unless an operator explicitly passes `--apply`:
 
 ```powershell
-python scripts/maintain-request-storage.py
+python project-support/scripts/maintain-request-storage.py
 # Review every candidate before applying:
-python scripts/maintain-request-storage.py --apply
+python project-support/scripts/maintain-request-storage.py --apply
 ```
 
 Backup retention applies only to timestamp-named folders (`YYYYMMDD-HHMMSS`) whose
@@ -74,7 +74,7 @@ process has stopped before removing it manually.
 
 ## Generated documents and history
 
-Continue using `php scripts/cleanup-request-artifacts.php` as a dry run. It only
+Continue using `php project-support/scripts/cleanup-request-artifacts.php` as a dry run. It only
 considers confirmed failed, unreferenced generation outputs older than one day.
 Do not broadly delete `generated_documents/`, audit history, request operations or
 notification events: the latter records protect replay and initial-notice uniqueness.
@@ -84,7 +84,7 @@ are retained.
 ## Verification
 
 ```powershell
-python -B tests/maintenance/test_cleanup.py
+python -B project-support/tests/maintenance/test_cleanup.py
 ```
 
 These tests use only temporary directories and verify packaging exclusions,

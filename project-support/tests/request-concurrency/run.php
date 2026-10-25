@@ -9,8 +9,8 @@ function send_sms(string $to, string $body): array {
     $GLOBALS['mockSmsCalls']++;
     return ['ok'=>true,'message_id'=>'mock-provider-id','error'=>''];
 }
-require __DIR__ . '/../../api/requests/_render.php';
-require __DIR__ . '/../../api/requests/_dispatch.php';
+require __DIR__ . '/../../../api/requests/_render.php';
+require __DIR__ . '/../../../api/requests/_dispatch.php';
 mysqli_report(MYSQLI_REPORT_OFF);
 $name = 'capstone_requests_' . getmypid();
 $admin = new mysqli($DB_HOST, $DB_USER, $DB_PASS);
@@ -104,7 +104,7 @@ try {
     import_sql($migration,$old);
     request_exec($migration,"SET FOREIGN_KEY_CHECKS=0");
     request_exec($migration,"INSERT INTO document_requests (reference_no,resident_id,resident_name,document_type,purpose,date_requested,status,generated_document_path) VALUES ('LEGACY',1,'Old','Clearance','Test','2026-01-01','ready','generated_documents/old.pdf')");
-    import_sql($migration,file_get_contents(__DIR__.'/../../database/migrations/20261025_request_concurrency.sql'));
+    import_sql($migration,file_get_contents(__DIR__.'/../../migrations/20261025_request_concurrency.sql'));
     $m=request_rows($migration,'SELECT * FROM document_requests')[0];
     check('additive migration preserves old path and establishes Ready cycle', (int)$m['row_version']===1 && (int)$m['readiness_cycle']===1 && $m['generated_document_path']==='generated_documents/old.pdf');
     check('migration records uncertain legacy pickup instead of silently duplicating it',request_rows($migration,'SELECT state FROM request_notification_events')[0]['state']==='uncertain');

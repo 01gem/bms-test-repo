@@ -2,7 +2,7 @@
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 // Deterministically reproduce the old read-then-write SQL, with separate connections.
 // Run before replacing the old endpoints. No application tables are modified.
-require __DIR__ . '/../../db.php';
+require __DIR__ . '/../../../db.php';
 $name = 'capstone_requests_baseline_' . getmypid();
 $admin = new mysqli($DB_HOST, $DB_USER, $DB_PASS);
 $admin->query("CREATE DATABASE `$name`");

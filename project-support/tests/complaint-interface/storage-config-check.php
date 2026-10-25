@@ -2,7 +2,7 @@
 // CLI-only regression for request-local private evidence configuration.
 declare(strict_types=1);
 if (PHP_SAPI !== 'cli') exit(1);
-require dirname(__DIR__, 2) . '/api/complaints/_attachments.php';
+require dirname(__DIR__, 3) . '/api/complaints/_attachments.php';
 
 $storageKey = 'COMPLAINT_ATTACHMENT_STORAGE_DIR';
 $originalProcess = getenv($storageKey);
@@ -12,7 +12,7 @@ $privateDirectory = sys_get_temp_dir() . '/complaint-storage-' . bin2hex(random_
 $otherDirectory = sys_get_temp_dir() . '/complaint-storage-' . bin2hex(random_bytes(6));
 mkdir($privateDirectory, 0755);
 mkdir($otherDirectory, 0755);
-$_SERVER['DOCUMENT_ROOT'] = dirname(dirname(__DIR__, 2));
+$_SERVER['DOCUMENT_ROOT'] = dirname(dirname(__DIR__, 3));
 $passed = 0;
 $failed = 0;
 $check = static function (string $name, bool $ok) use (&$passed, &$failed): void {
@@ -50,7 +50,7 @@ try {
   putenv($storageKey . '=' . $privateDirectory);
   $check('process-only configuration remains compatible', complaint_attachment_private_root(true)['ok']);
 
-  $_ENV[$storageKey] = dirname(__DIR__, 2);
+  $_ENV[$storageKey] = dirname(__DIR__, 3);
   $root = complaint_attachment_private_root(true);
   $check('a served request-local directory is rejected without process fallback', !$root['ok'] && $root['error'] === 'served');
 

@@ -11,7 +11,7 @@ foreach ($operations as $op) {
     $relative = 'generated_documents/' . $id . '.pdf';
     if (request_rows($db,'SELECT id FROM document_requests WHERE generated_document_path=?',[$relative])) continue;
     foreach (['pdf','docx'] as $extension) {
-        $path = dirname(__DIR__) . '/generated_documents/' . $id . '.' . $extension;
+        $path = dirname(__DIR__, 2) . '/generated_documents/' . $id . '.' . $extension;
         if (!is_file($path)) continue;
         echo ($apply ? 'Remove ' : 'Would remove ') . $path . "\n";
         if ($apply && !unlink($path)) throw new RuntimeException('Artifact cleanup failed.');

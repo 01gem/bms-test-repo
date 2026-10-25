@@ -3,9 +3,9 @@
 Run from the project root:
 
 ```powershell
-node tests/review-2026-10-24/render-check.js
-php tests/complaint-interface/storage-config-check.php
-php tests/review-2026-10-24/run.php
+node project-support/tests/review-2026-10-24/render-check.js
+php project-support/tests/complaint-interface/storage-config-check.php
+php project-support/tests/review-2026-10-24/run.php
 ```
 
 The JavaScript runner checks safe rendering, tab selection and draft retention,
@@ -29,7 +29,7 @@ Application database row counts are compared before and after the run.
 
 The existing PHP runner requires local MySQL and its configured Laragon binaries.
 It replaces earlier `capstone_fix24_*` disposable schemas and writes temporary
-server/session configuration to `tests/review-2026-10-24/server.json`.
+server/session configuration to `project-support/tests/review-2026-10-24/server.json`.
 The generated file is Git-ignored and contains temporary session cookies. The
 tracked `server.example.json` documents its shape without credentials; it is not
 a working configuration. Run the suite to generate real disposable-session values.
@@ -42,9 +42,9 @@ served through the same authorized route as real complaint photos. The script
 refuses any database name outside the runner's schema pattern.
 
 ```powershell
-php tests/complaint-interface/visual-fixture.php
-php tests/complaint-interface/visual-fixture.php stress
-php tests/complaint-interface/visual-fixture.php restore
+php project-support/tests/complaint-interface/visual-fixture.php
+php project-support/tests/complaint-interface/visual-fixture.php stress
+php project-support/tests/complaint-interface/visual-fixture.php restore
 ```
 
 For browser validation, inspect the card and all tabs at 1440px, then the stacked
