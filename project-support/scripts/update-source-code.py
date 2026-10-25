@@ -3,12 +3,12 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import subprocess
 
-root = Path(__file__).resolve().parent.parent
+root = Path(__file__).resolve().parents[2]
 names = subprocess.check_output(
     ['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z'], cwd=root
 ).decode('utf-8').split('\0')
 extensions = {'.php', '.js', '.css', '.sql', '.md', '.txt', '.json', '.py', '.htaccess'}
-stamp = datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')
+stamp = datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %I:%M:%S %p')
 parts = [f'Last saved: {stamp} PHT (UTC+08:00)\n',
          'Source snapshot excludes credentials, runtime session configuration, and binary assets.\n']
 for name in sorted(set(filter(None, names)), key=str.casefold):
