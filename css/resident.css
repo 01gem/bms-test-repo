@@ -825,3 +825,84 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 @media (max-width: 380px) {
   .stat-cards { grid-template-columns: 1fr; }
 }
+
+/* Resident complaint dialog only; other resident dialogs retain their styles. */
+.resident-complaint-dialog { padding: 0; width: min(96vw, 1120px); max-width: 1120px; max-height: 92dvh; border-radius: 10px; color: #15213c; animation: none; }
+.resident-complaint-dialog *, .resident-complaint-dialog *::before, .resident-complaint-dialog *::after { box-sizing: border-box; }
+.resident-complaint-dialog [hidden] { display: none !important; }
+.resident-complaint-dialog :focus-visible { outline: 3px solid #0878df; outline-offset: 3px; }
+.resident-complaint-dialog h3, .resident-complaint-dialog h4 { color: #15213c; text-transform: none; letter-spacing: normal; }
+.resident-complaint-dialog h4 { margin: 0 0 14px; font-size: 16px; font-weight: 650; }
+.resident-complaint-dialog .rc-head { flex: 0 0 auto; background: white; border-bottom: 1px solid #dce4ef; padding: 24px 26px 0; overflow-wrap: anywhere; }
+.resident-complaint-dialog .rc-heading { display: flex; gap: 18px; align-items: flex-start; }
+.resident-complaint-dialog .rc-heading > div:first-child { flex: 1; min-width: 0; }
+.resident-complaint-dialog .rc-reference { font-size: 13px; color: #607395; margin: 0 0 6px; }
+.resident-complaint-dialog .rc-heading h3 { font-size: 25px; line-height: 1.3; margin: 0; }
+.resident-complaint-dialog .rc-badges { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding-top: 22px; }
+.resident-complaint-dialog .rc-badges > span { font-size: 12px; color: #536583; display: inline-flex; gap: 6px; align-items: center; }
+.resident-complaint-dialog .status-badge { text-transform: capitalize; }
+.resident-complaint-dialog .status-open { color: #0876dc; background: #e7f2ff; }
+.resident-complaint-dialog .rc-close { width: 32px; height: 32px; flex-shrink: 0; border: 0; border-radius: 6px; background: transparent; color: #586c8b; cursor: pointer; font-size: 27px; line-height: 1; }
+.resident-complaint-dialog .rc-close:hover { background: #f0f5fb; }
+.resident-complaint-dialog .rc-filing { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 12px 0 16px; color: #536583; font-size: 13px; line-height: 1.6; }
+.resident-complaint-dialog .rc-filing i { margin-right: 7px; }
+.resident-complaint-dialog .rc-tabs { display: flex; gap: 20px; }
+.resident-complaint-dialog .rc-tabs button { padding: 13px 12px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: #536583; font: inherit; font-size: 14px; cursor: pointer; }
+.resident-complaint-dialog .rc-tabs button[aria-selected="true"] { color: #0876dc; border-bottom-color: #1685ed; font-weight: 650; }
+.resident-complaint-dialog .rc-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 24px 26px; overflow-wrap: anywhere; }
+.resident-complaint-dialog .rc-overview { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(220px, 1fr); gap: 26px; align-items: start; }
+.resident-complaint-dialog .rc-main { min-width: 0; }
+.resident-complaint-dialog .rc-section { margin-bottom: 24px; }
+.resident-complaint-dialog .rc-copy { white-space: pre-wrap; font-size: 14px; line-height: 1.65; }
+.resident-complaint-dialog .rc-note { margin: 0 0 24px; padding: 16px 18px; background: #f0f7ff; border: 1px solid #d1e5ff; border-radius: 8px; color: #415d86; }
+.resident-complaint-dialog .rc-note h4 { margin-bottom: 6px; font-size: 14px; color: #0876dc; }
+.resident-complaint-dialog .rc-note i { margin-right: 7px; }
+.resident-complaint-dialog .rc-information { background: #f4f8fc; border-radius: 8px; padding: 20px; }
+.resident-complaint-dialog .rc-information dl { margin: 0; }
+.resident-complaint-dialog .rc-information dt { color: #607395; font-size: 12px; margin-bottom: 6px; }
+.resident-complaint-dialog .rc-information dd { margin: 0; font-size: 14px; line-height: 1.6; }
+.resident-complaint-dialog .complaint-section-block { border: 0; border-radius: 0; background: transparent; padding: 0; margin: 0 0 24px; }
+.resident-complaint-dialog .complaint-extra-list { gap: 0; }
+.resident-complaint-dialog .complaint-extra-list div { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(0, 1fr); gap: 16px; background: transparent; border: 0; border-bottom: 1px solid #e1e8f2; border-radius: 0; padding: 10px 0; }
+.resident-complaint-dialog .complaint-extra-list dt { font-size: 13px; color: #536583; line-height: 1.5; }
+.resident-complaint-dialog .complaint-extra-list dd { margin: 0; font-size: 14px; line-height: 1.5; }
+.resident-complaint-dialog .rc-evidence { padding: 16px; border: 1px dashed #d1ddeb; border-radius: 8px; background: #f7faff; min-height: 86px; font-size: 13px; color: #607395; }
+.resident-complaint-dialog .rc-evidence > .complaint-meta { margin: 15px 0; text-align: center; }
+.resident-complaint-dialog .complaint-photos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.resident-complaint-dialog .complaint-photo-link { display: flex; flex-direction: column; min-height: 110px; padding: 0; overflow: hidden; background: #e7eef6; border-radius: 6px; text-decoration: none; }
+.resident-complaint-dialog .complaint-photo-link img { display: block; width: 100%; height: 126px; object-fit: cover; }
+.resident-complaint-dialog .complaint-photo-link > span { padding: 7px; background: white; width: 100%; font-size: 12px; color: #354b6d; }
+.resident-complaint-dialog .rc-photo-unavailable { justify-content: flex-end; }
+.resident-complaint-dialog .complaint-scroll-well { border: 0; padding: 0; background: transparent; }
+.resident-complaint-dialog .complaint-timeline-note { white-space: pre-wrap; overflow-wrap: anywhere; }
+.resident-complaint-dialog .complaint-timeline-item { padding-left: 18px; border-left: 2px solid #d2e5fc; }
+.resident-complaint-dialog .complaint-controls { max-width: 760px; }
+.resident-complaint-dialog .complaint-field textarea { width: 100%; background: white; color: #15213c; border: 1px solid #c6d2e3; border-radius: 7px; font: inherit; font-size: 14px; line-height: 1.6; min-height: 110px; resize: vertical; }
+.resident-complaint-dialog .complaint-btn { min-height: 42px; border-radius: 6px; background: #0878df; }
+.resident-complaint-dialog .complaint-btn:hover { background: #0766bf; }
+.resident-complaint-dialog .complaint-btn-ghost { background: white; color: #0876dc; border: 1px solid #a8c8eb; }
+.resident-complaint-dialog .complaint-btn-ghost:hover { background: #f0f7ff; }
+.resident-complaint-dialog .rc-footer { flex: 0 0 auto; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 26px; border-top: 1px solid #dce4ef; background: white; color: #607395; font-size: 12px; }
+.resident-complaint-dialog [data-resident-unsaved] { flex: 0 0 100%; padding-bottom: 12px; border-bottom: 1px solid #e1e8f2; }
+.resident-complaint-dialog [data-resident-unsaved] p { margin: 0 0 10px; color: #7c4615; font-size: 13px; }
+@media (max-width: 800px) {
+  .resident-complaint-dialog .rc-overview { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .resident-complaint-dialog .rc-information { padding: 16px; }
+  .resident-complaint-dialog .rc-information h4 { margin-bottom: 10px; }
+  .resident-complaint-dialog .rc-information dl { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; }
+  .resident-complaint-dialog .rc-information dt { margin: 0; }
+}
+@media (max-width: 480px) {
+  .resident-complaint-dialog { max-height: 96dvh; }
+  .resident-complaint-dialog .rc-head { padding: 16px 18px 0; }
+  .resident-complaint-dialog .rc-heading { flex-wrap: wrap; gap: 8px; }
+  .resident-complaint-dialog .rc-heading > div:first-child { flex-basis: calc(100% - 48px); }
+  .resident-complaint-dialog .rc-heading h3 { font-size: 20px; }
+  .resident-complaint-dialog .rc-badges { order: 2; padding: 0; }
+  .resident-complaint-dialog .rc-filing { margin: 10px 0 6px; gap: 4px 12px; font-size: 12px; }
+  .resident-complaint-dialog .rc-tabs { gap: 4px; justify-content: space-between; }
+  .resident-complaint-dialog .rc-tabs button { padding: 12px 5px; font-size: 13px; }
+  .resident-complaint-dialog .rc-scroll { padding: 20px 18px; }
+  .resident-complaint-dialog .rc-footer { padding: 10px 18px; }
+  .resident-complaint-dialog .complaint-photos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

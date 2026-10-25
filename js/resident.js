@@ -434,7 +434,8 @@ function escapeHtml(value) {
 
 function viewRequest(id) {
   const req = REQUESTS.find(r => Number(r.id) === Number(id));
-  if (!req) return;
+  if (!req || !residentComplaintCanClose()) return;
+  releaseResidentComplaintDialog();
   const copies = Number(req.copies || 1);
   const copiesLabel = copies === 1 ? '1 copy' : `${copies} copies`;
   const extraRows = Object.entries(req.requestFields || {})
@@ -471,11 +472,21 @@ function viewRequest(id) {
   document.getElementById('requestModal').classList.add('show');
 }
 
-function closeRequestModal() {
+function closeRequestModal(discard = false) {
+  if (!residentComplaintCanClose(discard === true)) return;
+  const opener = residentComplaintDialog?.opener;
+  const complaintId = residentComplaintDialog?.id;
+  if (discard === true && complaintId && complaintResolutionHold.has(complaintId)) {
+    // Keep the resolution recovery lock, but honor the explicit draft discard.
+    complaintResolutionHold.set(complaintId, { ...complaintResolutionHold.get(complaintId), reopenReason: '', commentDraft: '' });
+  }
+  releaseResidentComplaintDialog();
   const box = document.getElementById('requestModalBox');
   document.getElementById('requestModal')?.classList.remove('show');
   box?.classList.remove('complaint-detail-box');
   complaintOpenGeneration += 1;
+  if (opener?.isConnected) opener.focus();
+  else if (complaintId) document.querySelector(`[data-resident-complaint="${complaintId}"]`)?.focus();
 }
 
 function initRequestsTable() {
@@ -569,15 +580,14 @@ function renderAttachmentsHtml(attachments) {
     const href = escapeHtml(a.url);
     const label = `Photo ${index + 1}`;
     return `<a class="complaint-photo-link" href="${href}" target="_blank" rel="noopener" title="Open ${label}">
-      ${label}
+      <img src="${href}" alt="${label} evidence thumbnail" loading="lazy"><span>${label} <span aria-hidden="true">↗</span></span>
     </a>`;
   }).join('') + '</div>';
 }
 
-// Keep in sync with the identical complaint comment helpers in js/official.js.
 function complaintCommentsSectionHtml() {
   return `<section data-complaint-comments class="complaint-section">
-    <h4>Comments</h4>
+    <h4>Comments <span data-comment-count></span></h4>
     <div data-comment-list aria-live="polite" class="complaint-scroll-well">Loading comments…</div>
     <form data-comment-form class="complaint-controls">
       <label class="complaint-field">Add a comment (up to 2,000 characters)
@@ -619,7 +629,10 @@ async function initComplaintComments(root, complaintId) {
   let busy = true;
   const refresh = async () => {
     const comments = await loadComplaintComments(complaintId);
-    if (root.isConnected) list.innerHTML = renderComplaintCommentsHtml(comments);
+    if (root.isConnected) {
+      list.innerHTML = renderComplaintCommentsHtml(comments);
+      updateResidentCommentCount(root, comments.length);
+    }
   };
   form.addEventListener('submit', async event => {
     event.preventDefault();
@@ -630,6 +643,8 @@ async function initComplaintComments(root, complaintId) {
       return;
     }
     busy = true;
+    root.dataset.commentBusy = '1';
+    syncResidentDiscard(root.closest('[role="dialog"]'));
     button.disabled = true;
     textarea.disabled = true;
     status.textContent = 'Posting…';
@@ -645,11 +660,19 @@ async function initComplaintComments(root, complaintId) {
         busy = false;
         button.disabled = false;
         textarea.disabled = false;
+        root.dataset.commentBusy = '0';
+        syncResidentDiscard(root.closest('[role="dialog"]'));
+        if (document.activeElement === document.body) button.focus();
       }
       return;
     }
     if (!root.isConnected) return;
     textarea.value = '';
+    const held = complaintResolutionHold.get(Number(complaintId));
+    if (held) complaintResolutionHold.set(Number(complaintId), { ...held, commentDraft: '' });
+    if (residentComplaintDialog?.box === root.closest('[role="dialog"]') && !residentComplaintDirty()) {
+      residentComplaintDialog.box.querySelector('[data-resident-unsaved]').hidden = true;
+    }
     status.textContent = 'Comment posted.';
     try {
       await refresh();
@@ -660,6 +683,9 @@ async function initComplaintComments(root, complaintId) {
         busy = false;
         button.disabled = false;
         textarea.disabled = false;
+        root.dataset.commentBusy = '0';
+        syncResidentDiscard(root.closest('[role="dialog"]'));
+        if (document.activeElement === document.body) button.focus();
       }
     }
   });
@@ -673,6 +699,13 @@ async function initComplaintComments(root, complaintId) {
       button.disabled = false;
     }
   }
+}
+
+function updateResidentCommentCount(root, count) {
+  const countNode = root.querySelector('[data-comment-count]');
+  if (countNode) countNode.textContent = `(${count})`;
+  const tabCount = root.closest('[role="dialog"]')?.querySelector('[data-comment-tab-count]');
+  if (tabCount) tabCount.textContent = `(${count})`;
 }
 
 // Keep in sync with the identical complaintResidentResponseText() in js/official.js.
@@ -938,6 +971,7 @@ function initResidentResolutionActions(section, complaint, box, options = {}) {
       const comments = await loadComplaintComments(complaintId);
       if (list.isConnected && (!textarea || textarea.isConnected) && stillThisComplaint()) {
         list.innerHTML = renderComplaintCommentsHtml(comments);
+        updateResidentCommentCount(commentRoot, comments.length);
       }
     }
   }
@@ -1017,8 +1051,15 @@ function initResidentResolutionActions(section, complaint, box, options = {}) {
   }
 
   const runResolution = (kind) => {
+    if (busy || section.dataset.responsePending === '1') return;
+    section.dataset.responsePending = '1';
+    const discard = box.querySelector('[data-resident-discard]');
+    if (discard) discard.disabled = true;
     sendResolution(kind).catch(() => {
       showRecovery('The result could not be verified. Refresh status before trying again.');
+    }).finally(() => {
+      section.dataset.responsePending = '0';
+      if (discard && box.querySelector('[data-complaint-comments]')?.dataset.commentBusy !== '1') discard.disabled = false;
     });
   };
 
@@ -1173,6 +1214,7 @@ function renderComplaintExtraFieldsHtml(fields) {
 }
 
 async function viewComplaint(id) {
+  if (!residentComplaintCanClose()) return;
   const seq = ++complaintDetailSeq;
   const openGeneration = complaintOpenGeneration;
   const numericId = Number(id);
@@ -1193,100 +1235,173 @@ async function viewComplaint(id) {
   if (seq !== complaintDetailSeq || openGeneration !== complaintOpenGeneration) return;
   const c = COMPLAINTS.find(x => Number(x.id) === numericId);
   if (!c) return;
+  if (!residentComplaintCanClose()) return;
   const box = document.getElementById('requestModalBox');
-  if (!box) return;
+  const modal = document.getElementById('requestModal');
+  if (!box || !modal) return;
+  const opener = residentComplaintDialog?.opener || document.activeElement;
+  releaseResidentComplaintDialog();
   box.dataset.complaintId = String(c.id);
   const timelineToken = `${Date.now()}-${Math.random()}`;
   const attachmentToken = `${Date.now()}-${Math.random()}`;
   box.dataset.timelineToken = timelineToken;
   box.dataset.attachmentToken = attachmentToken;
-  const modal = document.getElementById('requestModal');
-
-  const descriptionHtml = c.description
-    ? escapeHtml(c.description).replace(/\r?\n/g, '<br>')
-    : '<span class="complaint-muted">No description provided.</span>';
-  const noteHtml = c.note
-    ? escapeHtml(c.note)
-    : '<span class="complaint-muted">No official note yet.</span>';
-  const fact = (label, html) => `<div class="complaint-fact"><dt>${escapeHtml(label)}</dt><dd>${html}</dd></div>`;
-
-  box.classList.add('complaint-detail-box');
+  box.classList.add('complaint-detail-box', 'resident-complaint-dialog');
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-modal', 'true');
+  box.setAttribute('aria-labelledby', 'residentComplaintTitle');
   box.innerHTML = `
-    <div class="complaint-detail-head">
-      <div>
-        <p class="complaint-detail-kicker">Complaint</p>
-        <h3>${escapeHtml(c.ref)}</h3>
+    <header class="rc-head">
+      <div class="rc-heading">
+        <div><p class="rc-reference">${escapeHtml(c.ref)}</p><h3 id="residentComplaintTitle">${escapeHtml(c.cat)}</h3></div>
+        <div class="rc-badges"><span>Status: <span class="status-badge status-${complaintStatusToken(c.status)}" data-complaint-status>${escapeHtml(c.status)}</span></span><span>Severity: ${severityChip(c.severity)}</span></div>
+        <button type="button" class="rc-close" onclick="closeRequestModal()" aria-label="Close complaint details">×</button>
       </div>
-      <button type="button" class="complaint-detail-x" onclick="closeRequestModal()" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
-    </div>
-    <div class="complaint-detail-scroll">
-      <div class="complaint-detail-facts">
-        ${fact('Category', escapeHtml(c.cat || 'Not provided'))}
-        ${fact('Location', escapeHtml(c.loc || 'Not provided'))}
-        ${fact('Date Filed', escapeHtml(c.date || 'Not provided'))}
-        ${fact('Status', `<span class="status-badge status-${complaintStatusToken(c.status)}" data-complaint-status>${escapeHtml(c.status || 'Not provided')}</span>`)}
-        ${fact('Severity', severityChip(c.severity))}
+      <p class="rc-filing"><span><i class="fa-solid fa-location-dot" aria-hidden="true"></i> ${escapeHtml(c.loc)}</span><span><i class="fa-regular fa-calendar" aria-hidden="true"></i> Filed ${escapeHtml(c.date)}</span></p>
+      <div class="rc-tabs" role="tablist" aria-label="Complaint details">
+        ${['Overview', 'Timeline', 'Comments'].map((name, index) => `<button type="button" role="tab" id="residentTab${name}" aria-controls="residentPanel${name}" aria-selected="${index === 0}" tabindex="${index === 0 ? 0 : -1}">${name}${name === 'Comments' ? ' <span data-comment-tab-count></span>' : ''}</button>`).join('')}
       </div>
-      <div class="complaint-detail-copy">
-        <section class="complaint-panel">
-          <h4>Description</h4>
-          <div class="complaint-panel-body">${descriptionHtml}</div>
-        </section>
-        <section class="complaint-panel complaint-panel-note">
-          <h4>Official note</h4>
-          <div class="complaint-panel-body">${noteHtml}</div>
-        </section>
-      </div>
-      ${renderComplaintExtraFieldsHtml(c.extraFieldsDisplay)}
-      ${complaintResidentResponseSectionHtml(c)}
-      ${complaintTriageSectionHtml(c)}
-      ${complaintOwnSharingHtml(c)}
-      <div class="complaint-detail-split">
-        <section class="complaint-section">
-          <h4>Timeline</h4>
-          <div id="complaintTimeline" class="complaint-scroll-well"></div>
-        </section>
-        ${complaintCommentsSectionHtml()}
-      </div>
-      <section class="complaint-section complaint-section-block">
-        <h4>Photos</h4>
-        <div id="complaintAttachments" class="complaint-photo-well"></div>
+    </header>
+    <div class="rc-scroll">
+      <section role="tabpanel" id="residentPanelOverview" aria-labelledby="residentTabOverview" tabindex="0">
+        <div class="rc-overview">
+          <div class="rc-main">
+            <section class="rc-section"><h4>Description</h4><div class="rc-copy">${escapeHtml(c.description || 'No description provided.')}</div></section>
+            <section class="rc-note"><h4><i class="fa-regular fa-comment" aria-hidden="true"></i> Official note</h4><div class="rc-copy">${escapeHtml(c.note || 'No official note yet.')}</div></section>
+            ${renderComplaintExtraFieldsHtml(c.extraFieldsDisplay)}
+            ${complaintResidentResponseSectionHtml(c)}
+            <section class="rc-section"><h4>Photos <span data-photo-count></span></h4><div id="complaintAttachments" class="rc-evidence" aria-live="polite">Loading photos…</div></section>
+          </div>
+          <aside class="rc-information" aria-labelledby="residentComplaintInfo"><h4 id="residentComplaintInfo">Complaint information</h4><dl><dt>Date filed</dt><dd>${escapeHtml(c.date || 'Not provided')}</dd></dl></aside>
+        </div>
       </section>
+      <section role="tabpanel" id="residentPanelTimeline" aria-labelledby="residentTabTimeline" tabindex="0" hidden><h4>Timeline</h4><div id="complaintTimeline" aria-live="polite">Loading timeline…</div></section>
+      <section role="tabpanel" id="residentPanelComments" aria-labelledby="residentTabComments" tabindex="0" hidden>${complaintCommentsSectionHtml()}</section>
     </div>
-    <button type="button" class="complaint-detail-close" onclick="closeRequestModal()">Close</button>
+    <footer class="rc-footer">
+      <div data-resident-unsaved hidden><p role="alert">You have an unsent comment or reopen reason. Discard it?</p><div class="complaint-control-row"><button type="button" data-resident-keep class="complaint-btn">Keep editing</button><button type="button" data-resident-discard class="complaint-btn complaint-btn-ghost">Discard draft</button></div></div>
+      <span>Your complaint details</span><button type="button" class="complaint-btn complaint-btn-ghost" onclick="closeRequestModal()">Close</button>
+    </footer>
   `;
-  if (seq !== complaintDetailSeq || openGeneration !== complaintOpenGeneration) return;
-  document.getElementById('requestModal').classList.add('show');
+  const state = { box, id: Number(c.id), opener, oldOverflow: document.body.style.overflow };
+  residentComplaintDialog = state;
+  box.querySelector('[data-resident-keep]').addEventListener('click', () => {
+    box.querySelector('[data-resident-unsaved]').hidden = true;
+    state.returnFocus?.focus();
+  });
+  box.querySelector('[data-resident-discard]').addEventListener('click', () => {
+    if (residentComplaintDialog === state && !residentComplaintBusy(box)) closeRequestModal(true);
+  });
+  const tabs = Array.from(box.querySelectorAll('[role="tab"]'));
+  const activate = selected => tabs.forEach(tab => {
+    const on = selected === tab;
+    tab.setAttribute('aria-selected', String(on));
+    tab.tabIndex = on ? 0 : -1;
+    box.querySelector('#' + tab.getAttribute('aria-controls')).hidden = !on;
+  });
+  tabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => activate(tab));
+    tab.addEventListener('keydown', event => {
+      const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
+        : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
+        : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : null;
+      if (next === null) return;
+      event.preventDefault(); activate(tabs[next]); tabs[next].focus();
+    });
+  });
+  state.keyHandler = event => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeRequestModal(); }
+    if (event.key !== 'Tab') return;
+    const controls = Array.from(box.querySelectorAll('button, textarea, a[href], [tabindex="0"]'))
+      .filter(node => !node.disabled && !node.closest('[hidden]') && node.getClientRects().length);
+    const first = controls[0], last = controls[controls.length - 1];
+    if (event.shiftKey && (document.activeElement === first || !box.contains(document.activeElement))) {
+      event.preventDefault(); last?.focus();
+    } else if (!event.shiftKey && (document.activeElement === last || !box.contains(document.activeElement))) {
+      event.preventDefault(); first?.focus();
+    }
+  };
+  state.unloadHandler = event => {
+    if (residentComplaintDirty() || residentComplaintBusy(box)) { event.preventDefault(); event.returnValue = ''; }
+  };
+  document.addEventListener('keydown', state.keyHandler, true);
+  window.addEventListener('beforeunload', state.unloadHandler);
+  modal.classList.add('show');
+  document.body.style.overflow = 'hidden';
+  box.querySelector('.rc-close').focus();
   initComplaintComments(box.querySelector('[data-complaint-comments]'), c.id);
   initResidentResolutionActions(box.querySelector('[data-resident-response]'), c, box, { locked: lockActions });
   restoreComplaintDrafts(box, stagedDraft);
-  const sameResidentDetail = () => modal
-    && modal.classList.contains('show')
-    && Number(box.dataset.complaintId) === Number(c.id);
-  loadComplaintTimeline(c.id)
-    .then(updates => {
-      if (!sameResidentDetail() || box.dataset.timelineToken !== timelineToken) return;
-      const el = box.querySelector('#complaintTimeline');
-      if (el) el.innerHTML = renderTimelineHtml(updates);
-    })
-    .catch(() => {
-      if (!sameResidentDetail() || box.dataset.timelineToken !== timelineToken) return;
-      const el = box.querySelector('#complaintTimeline');
-      if (el) el.textContent = 'Timeline unavailable.';
-    });
-  loadComplaintAttachments(c.id)
-    .then(atts => {
-      if (!sameResidentDetail() || box.dataset.attachmentToken !== attachmentToken) return;
-      const el = box.querySelector('#complaintAttachments');
-      if (el) el.innerHTML = renderAttachmentsHtml(atts);
-    })
-    .catch(() => {
-      if (!sameResidentDetail() || box.dataset.attachmentToken !== attachmentToken) return;
-      const el = box.querySelector('#complaintAttachments');
-      if (el) el.textContent = 'Photos unavailable.';
-    });
+  const sameResidentDetail = () => residentComplaintDialog === state && modal.classList.contains('show');
+  loadComplaintTimeline(c.id).then(updates => {
+    if (!sameResidentDetail() || box.dataset.timelineToken !== timelineToken) return;
+    box.querySelector('#complaintTimeline').innerHTML = renderTimelineHtml(updates);
+  }).catch(() => {
+    if (sameResidentDetail() && box.dataset.timelineToken === timelineToken) box.querySelector('#complaintTimeline').textContent = 'Timeline unavailable. Close and reopen this complaint to retry.';
+  });
+  loadComplaintAttachments(c.id).then(attachments => {
+    if (!sameResidentDetail() || box.dataset.attachmentToken !== attachmentToken) return;
+    const root = box.querySelector('#complaintAttachments');
+    root.innerHTML = renderAttachmentsHtml(attachments);
+    box.querySelector('[data-photo-count]').textContent = `(${attachments.length})`;
+    initResidentPhotoFallbacks(root);
+  }).catch(() => {
+    if (sameResidentDetail() && box.dataset.attachmentToken === attachmentToken) box.querySelector('#complaintAttachments').textContent = 'Photos unavailable. Close and reopen this complaint to retry.';
+  });
 }
 
+let residentComplaintDialog = null;
+
+function residentComplaintDirty() {
+  const box = residentComplaintDialog?.box;
+  return !!box && !!(box.querySelector('[name="body"]')?.value.trim() || box.querySelector('[data-reopen-reason]')?.value.trim());
+}
+
+function residentComplaintBusy(box) {
+  return !!box && (box.querySelector('[data-complaint-comments]')?.dataset.commentBusy === '1'
+    || box.querySelector('[data-resident-response]')?.dataset.responsePending === '1');
+}
+
+function syncResidentDiscard(box) {
+  const discard = box?.querySelector('[data-resident-discard]');
+  if (discard) discard.disabled = residentComplaintBusy(box);
+}
+
+function residentComplaintCanClose(discard = false) {
+  const state = residentComplaintDialog;
+  if (!state) return true;
+  if (residentComplaintBusy(state.box)) {
+    const status = state.box.querySelector('[data-comment-status]');
+    if (status) status.textContent = 'An update is in progress. Please wait before closing.';
+    return false;
+  }
+  if (discard || !residentComplaintDirty()) return true;
+  state.returnFocus = document.activeElement;
+  state.box.querySelector('[data-resident-unsaved]').hidden = false;
+  state.box.querySelector('[data-resident-keep]').focus();
+  return false;
+}
+
+function releaseResidentComplaintDialog() {
+  const state = residentComplaintDialog;
+  if (!state) return;
+  document.removeEventListener('keydown', state.keyHandler, true);
+  window.removeEventListener('beforeunload', state.unloadHandler);
+  document.body.style.overflow = state.oldOverflow;
+  state.box.classList.remove('resident-complaint-dialog');
+  ['role', 'aria-modal', 'aria-labelledby'].forEach(name => state.box.removeAttribute(name));
+  residentComplaintDialog = null;
+}
+
+function initResidentPhotoFallbacks(root) {
+  root.querySelectorAll('.complaint-photo-link img').forEach(img => {
+    img.addEventListener('error', () => {
+      img.hidden = true;
+      img.parentElement.classList.add('rc-photo-unavailable');
+      img.parentElement.querySelector('span').textContent = 'Photo unavailable · Open original';
+    });
+  });
+}
 function renderComplaintsList() {
   const el = document.getElementById('complaintsList');
   if (!el) return;
@@ -1311,7 +1426,7 @@ function renderComplaintsList() {
         <span class="progress-label">${complaintProgressWidth(c.progress)}% resolved</span>
       </div>
       <div class="ci-actions">
-        <button type="button" class="ci-view-btn" onclick="viewComplaint(${complaintDomId(c.id)})">View Details</button>
+        <button type="button" class="ci-view-btn" data-resident-complaint="${complaintDomId(c.id)}" onclick="viewComplaint(${complaintDomId(c.id)})">View Details</button>
       </div>
     </div>
   `).join('');

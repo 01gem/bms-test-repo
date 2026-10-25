@@ -4,6 +4,7 @@ Run from the project root:
 
 ```powershell
 node tests/review-2026-10-24/render-check.js
+php tests/complaint-interface/storage-config-check.php
 php tests/review-2026-10-24/run.php
 ```
 
@@ -11,6 +12,12 @@ The JavaScript runner checks safe rendering, tab selection and draft retention,
 single-flight saves and comments, failure recovery, note/comment limits,
 unsaved-edit choices, and assignment-control removal. It uses the existing
 lightweight DOM fixture and Node's VM; no frontend dependencies are needed.
+
+The standalone storage check reproduces a missing process-environment value with
+valid request-local configuration, as seen under concurrent Apache/mod_php
+requests. It also verifies configuration precedence and that missing, empty,
+served, and unavailable storage still fail closed. It uses temporary directories
+and does not connect to the application database.
 
 The PHP runner includes `api-checks.php` in its existing disposable schema.
 It checks persistence, omitted fields, unchanged saves, Unicode note validation,

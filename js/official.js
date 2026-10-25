@@ -2212,12 +2212,15 @@ function complaintDetailDirty() {
 
 function complaintDetailCanClose() {
   if (!complaintDetailState) return true;
-  if (complaintDetailState.busy) {
-    complaintDetailState.feedback.textContent = 'Saving updates. Please wait before closing.';
+  const state = complaintDetailState;
+  // Approval belongs to this one close attempt, including a blocked attempt.
+  const discardApproved = state.discardApproved === true;
+  state.discardApproved = false;
+  if (state.busy) {
+    state.feedback.textContent = 'Saving updates. Please wait before closing.';
     return false;
   }
-  if (!complaintDetailDirty() || complaintDetailState.discardApproved) return true;
-  const state = complaintDetailState;
+  if (!complaintDetailDirty() || discardApproved) return true;
   state.returnFocus = document.activeElement;
   state.box.querySelector('[data-unsaved-prompt]').hidden = false;
   state.box.querySelector('[data-keep-editing]').focus();
@@ -2293,12 +2296,18 @@ function viewComplaint(id) {
   const state = { box, form, opener, busy: false, feedback: box.querySelector('[data-save-feedback]'), saved: JSON.stringify(complaintManagementValues(form)) };
   complaintDetailState = state;
   box.querySelector('[data-keep-editing]').addEventListener('click', () => {
+    state.discardApproved = false;
     box.querySelector('[data-unsaved-prompt]').hidden = true;
     state.returnFocus?.focus();
   });
   box.querySelector('[data-discard-edits]').addEventListener('click', () => {
+    if (state.busy || complaintDetailState !== state) return;
     state.discardApproved = true;
-    closeModal();
+    try {
+      closeModal();
+    } finally {
+      state.discardApproved = false;
+    }
   });
   form.addEventListener('submit', event => { event.preventDefault(); updateComplaint(c.id); });
   const tabs = Array.from(box.querySelectorAll('[role="tab"]'));
@@ -2398,9 +2407,10 @@ async function updateComplaint(id) {
     return;
   }
   state.busy = true;
+  state.discardApproved = false;
   complaintMutationInFlight = true;
   ++complaintMutationEpoch;
-  const controls = Array.from(state.form.querySelectorAll('button, select, textarea'));
+  const controls = [...state.form.querySelectorAll('button, select, textarea'), state.box.querySelector('[data-discard-edits]')];
   const focusedControl = document.activeElement;
   controls.forEach(node => { node.disabled = true; });
   state.feedback.dataset.kind = 'saving';
@@ -2410,6 +2420,8 @@ async function updateComplaint(id) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, ...values })
     });
+    state.discardApproved = false;
+    state.box.querySelector('[data-unsaved-prompt]').hidden = true;
     // Apply the acknowledged values even if the subsequent list refresh fails.
     const oldStatus = c.status;
     c.status = values.status;

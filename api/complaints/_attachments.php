@@ -39,7 +39,10 @@ function complaint_attachment_detect_mime(string $path): string|false {
  * @return array{ok:bool,message:string,path:string,error:string}
  */
 function complaint_attachment_private_root(bool $forWrite): array {
-  $configured = getenv('COMPLAINT_ATTACHMENT_STORAGE_DIR');
+  // mod_php requests can lose putenv() values when another thread finishes.
+  // Prefer the configuration snapshot loaded for this request by db.php.
+  $key = 'COMPLAINT_ATTACHMENT_STORAGE_DIR';
+  $configured = $_ENV[$key] ?? $_SERVER[$key] ?? getenv($key);
   $configured = is_string($configured) ? trim($configured) : '';
   if ($configured === '') {
     error_log('Complaint attachment storage is not configured.');

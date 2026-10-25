@@ -48,14 +48,25 @@ function element(tag) {
   };
   el.setAttribute = (name, value) => {
     el.attrs.set(name, String(value));
+    if (name === 'hidden') el.hidden = true;
     if (name === 'class') {
       el.classList.classes = new Set(String(value).split(/\s+/).filter(Boolean));
     }
     if (name.startsWith('data-')) el.dataset[name.slice(5)] = String(value);
   };
   el.getAttribute = (name) => (el.attrs.has(name) ? el.attrs.get(name) : null);
-  el.removeAttribute = name => el.attrs.delete(name);
-  el.focus = () => {};
+  el.hasAttribute = name => el.attrs.has(name);
+  el.removeAttribute = name => { el.attrs.delete(name); };
+  Object.defineProperty(el, 'hidden', {
+    get() { return el.attrs.has('hidden'); },
+    set(value) { if (value) el.attrs.set('hidden', ''); else el.attrs.delete('hidden'); },
+  });
+  Object.defineProperty(el, 'parentElement', { get() { return el.parent; } });
+  el.contains = node => { while (node) { if (node === el) return true; node = node.parent; } return false; };
+  el.getClientRects = () => el.isConnected && !el.closest('[hidden]') ? [{}] : [];
+  el.focus = () => {
+    if (!el.disabled && el.ownerDocument) el.ownerDocument.activeElement = el;
+  };
   el.addEventListener = (type, fn) => {
     (el.listeners[type] || (el.listeners[type] = [])).push(fn);
   };
@@ -73,10 +84,35 @@ function element(tag) {
     configurable: true,
     get() { return el._html || ''; },
     set(value) {
+      el.children.forEach(detach);
       el._html = String(value);
       el.children = parseChildren(String(value), el);
     },
   });
+  el.remove = () => {
+    const siblings = el.parent?.children;
+    if (siblings) { const index = siblings.indexOf(el); if (index >= 0) siblings.splice(index, 1); }
+    detach(el);
+  };
+  Object.defineProperty(el, 'outerHTML', { set(value) {
+    const siblings = el.parent.children;
+    const index = siblings.indexOf(el);
+    const replacements = parseChildren(String(value), el.parent);
+    replacements.forEach(node => { node.parent = el.parent; });
+    siblings.splice(index, 1, ...replacements);
+    detach(el);
+  } });
+  el.insertAdjacentHTML = (position, html) => {
+    const container = position === 'beforebegin' || position === 'afterend' ? el.parent : el;
+    const nodes = parseChildren(html, container);
+    nodes.forEach(node => { node.parent = container; });
+    const index = position === 'beforebegin' ? container.children.indexOf(el)
+      : position === 'afterend' ? container.children.indexOf(el) + 1
+      : position === 'afterbegin' ? 0 : container.children.length;
+    container.children.splice(index, 0, ...nodes);
+  };
+  el.before = node => { node.parent = el.parent; el.parent.children.splice(el.parent.children.indexOf(el), 0, node); };
+  el.append = node => { node.parent = el; el.children.push(node); };
   el.elements = {
     namedItem(name) {
       return find(el, `[name="${name}"]`) || find(el, 'textarea');
@@ -85,9 +121,21 @@ function element(tag) {
   return el;
 }
 
+function detach(node) { node.isConnected = false; node.children.forEach(detach); }
+
 function matches(el, selector) {
   if (!selector) return false;
   if (selector.includes(',')) return selector.split(',').some(part => matches(el, part.trim()));
+  if (selector.includes(' ')) {
+    const parts = selector.split(/\s+/);
+    if (!matches(el, parts.pop())) return false;
+    let ancestor = el.parent;
+    while (parts.length && ancestor) {
+      if (matches(ancestor, parts[parts.length - 1])) parts.pop();
+      ancestor = ancestor.parent;
+    }
+    return !parts.length;
+  }
   if (selector.startsWith('[') && selector.endsWith(']')) {
     const body = selector.slice(1, -1);
     const eq = body.indexOf('=');
@@ -142,6 +190,7 @@ function parseChildren(html, parent) {
       continue;
     }
     const node = element(tag);
+    node.ownerDocument = parent.ownerDocument;
     node.parent = stack[stack.length - 1];
     const attrRe = /([:@a-zA-Z0-9_-]+)(?:\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
     let attr;
@@ -158,18 +207,27 @@ function parseChildren(html, parent) {
 
 function makeDocument() {
   const nodes = new Map();
-  return {
+  const document = {
     body: element('body'),
     activeElement: element('button'),
     addEventListener() {},
     removeEventListener() {},
+    createElement(tag) { const node = element(tag); node.ownerDocument = document; return node; },
+    querySelector(selector) {
+      for (const node of nodes.values()) { if (matches(node, selector)) return node; const found = find(node, selector); if (found) return found; }
+      return null;
+    },
     getElementById(id) {
       if (!nodes.has(id)) nodes.set(id, element('div'));
       const node = nodes.get(id);
+      node.ownerDocument = document;
       node.setAttribute('id', id);
       return node;
     },
   };
+  document.body.ownerDocument = document;
+  document.activeElement.ownerDocument = document;
+  return document;
 }
 
 function loadScript(file, exportName, extras) {
@@ -243,6 +301,20 @@ globalThis.__resident = {
   renderRecentComplaints,
   renderComplaintsList,
   viewComplaint,
+  closeRequestModal,
+  renderAttachmentsHtml,
+  renderTimelineHtml,
+  renderComplaintCommentsHtml,
+  complaintResolutionActionsHtml,
+  state() { return residentComplaintDialog; },
+  holdDrafts(id, draft) { complaintResolutionHold.set(id, draft); },
+  heldDrafts(id) { return complaintResolutionHold.get(id); },
+  configure(callback) { fetchJson = callback; },
+  configureResolution(send, refreshRows) {
+    globalThis.fetch = send;
+    loadComplaints = refreshRows;
+    renderComplaintsList = () => {};
+  },
   setRows(rows) { COMPLAINTS = rows; },
 };
 `;
@@ -382,7 +454,7 @@ check('resident list status class is allowlisted', residentList.includes('class=
 check('resident progress is numeric', residentList.includes('width:50%') && !residentList.includes('width:50% resolved'));
 resident.api.viewComplaint(7);
 const residentDetail = resident.document.getElementById('requestModalBox').innerHTML;
-check('resident detail has triage and sharing summaries', residentDetail.includes('data-complaint-triage') && residentDetail.includes('data-complaint-own-sharing'));
+check('resident detail removes assignment sharing and response targets', !residentDetail.includes('data-complaint-triage') && !residentDetail.includes('data-complaint-own-sharing') && !residentDetail.includes('Response target') && !residentDetail.includes('Unassigned'));
 check('resident detail hides parent identity', !residentDetail.includes('PARENT-REF-XYZ') && !residentDetail.includes('99999'));
 check('resident detail has no mutation controls', !residentDetail.includes('data-save-sharing') && !residentDetail.includes('data-save-assignment') && !residentDetail.includes('data-open-related-report'));
 
@@ -475,7 +547,289 @@ async function behaviorChecks() {
   check('failed comment keeps draft and enables retry', commentInput.value === 'Keep failed comment' && !commentForm.querySelector('button').disabled && commentRoot.querySelector('[data-comment-status]').textContent.includes('Connection failed'));
 }
 
-behaviorChecks().then(() => {
+async function discardSaveChecks() {
+  const modal = official.document.getElementById('actionModal');
+  const open = () => modal.classList.contains('show');
+  const click = node => node.listeners.click[0](); // Deliberately bypass native disabled-click filtering.
+  const escape = state => state.keyHandler({ key: 'Escape', preventDefault() {}, stopPropagation() {} });
+  const fresh = async () => {
+    official.api.configure(async () => ({ success: true, comments: [], attachments: [], updates: [] }));
+    official.api.setRows([Object.assign({}, row, { status: 'open', severity: 'low', note: 'Saved baseline' })]);
+    official.api.viewComplaint(7);
+    await new Promise(resolve => setImmediate(resolve));
+    const state = official.api.state();
+    state.form.elements.namedItem('status').value = 'open';
+    state.form.elements.namedItem('severity').value = 'low';
+    state.saved = JSON.stringify(official.api.complaintManagementValues(state.form));
+    return {
+      state,
+      note: state.form.elements.namedItem('official_note'),
+      comment: state.box.querySelector('[name="body"]'),
+      prompt: state.box.querySelector('[data-unsaved-prompt]'),
+      discard: state.box.querySelector('[data-discard-edits]'),
+      keep: state.box.querySelector('[data-keep-editing]'),
+    };
+  };
+  const pendingSave = () => {
+    let resolve, reject, requests = 0;
+    const response = new Promise((ok, fail) => { resolve = ok; reject = fail; });
+    official.api.configure(async () => { requests++; return response; });
+    return { promise: official.api.updateComplaint(7), resolve, reject, requests: () => requests };
+  };
+  const dispose = dialog => {
+    if (official.api.state() === dialog.state) click(dialog.discard);
+  };
+
+  let dialog = await fresh();
+  dialog.note.value = 'First draft';
+  const noteLeave = { prevented: false, preventDefault() { this.prevented = true; } };
+  dialog.state.unloadHandler(noteLeave);
+  check('discard regression: unsaved note requests page-leave protection', noteLeave.prevented && noteLeave.returnValue === '');
+  official.api.closeModal();
+  check('discard regression: editing opens a visible confirmation', open() && !dialog.prompt.hidden);
+  let save = pendingSave();
+  check('discard regression: pending save disables discard', dialog.discard.disabled);
+  click(dialog.discard);
+  check('discard regression: programmatic discard during save stays open without approval', open() && !dialog.state.discardApproved);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await official.api.updateComplaint(7);
+    click(dialog.discard);
+    escape(dialog.state);
+    official.api.closeModal();
+  }
+  check('discard regression: duplicate save Escape and close stay blocked', open() && !dialog.state.discardApproved && save.requests() === 1);
+  save.resolve({ success: true, changed: true });
+  await save.promise;
+  check('discard regression: success clears approval and hides stale prompt', open() && !dialog.state.discardApproved && dialog.prompt.hidden && !dialog.discard.disabled);
+  const savedLeave = { prevented: false, preventDefault() { this.prevented = true; } };
+  dialog.state.unloadHandler(savedLeave);
+  check('discard regression: fully saved management form no longer requests page-leave warning', !savedLeave.prevented && savedLeave.returnValue === undefined);
+  dialog.note.value = 'A later edit must be protected';
+  official.api.closeModal();
+  check('discard regression: later edits get a fresh confirmation', open() && !dialog.prompt.hidden && dialog.note.value === 'A later edit must be protected');
+  dispose(dialog);
+
+  dialog = await fresh();
+  dialog.note.value = 'Keep this failed note';
+  dialog.comment.value = 'Keep this unsent comment after failure';
+  dialog.state.form.elements.namedItem('status').value = 'investigating';
+  dialog.state.form.elements.namedItem('severity').value = 'high';
+  official.api.closeModal();
+  save = pendingSave();
+  click(dialog.discard);
+  escape(dialog.state);
+  save.reject(new Error('Controlled save failure'));
+  await save.promise;
+  const fields = Array.from(dialog.state.form.querySelectorAll('button, select, textarea'));
+  check('discard regression: failure retains all values and restores controls', open() && dialog.note.value === 'Keep this failed note' && dialog.comment.value === 'Keep this unsent comment after failure' && dialog.state.form.elements.namedItem('status').value === 'investigating' && dialog.state.form.elements.namedItem('severity').value === 'high' && fields.every(field => !field.disabled) && !dialog.discard.disabled && dialog.state.feedback.dataset.kind === 'error');
+  official.api.closeModal();
+  check('discard regression: failed save still requires confirmation', open() && !dialog.prompt.hidden && !dialog.state.discardApproved);
+  const failedLeave = { prevented: false, preventDefault() { this.prevented = true; } };
+  dialog.state.unloadHandler(failedLeave);
+  check('discard regression: failed save keeps page-leave protection', failedLeave.prevented && failedLeave.returnValue === '');
+  dispose(dialog);
+
+  dialog = await fresh();
+  dialog.note.value = 'Keep editing this draft';
+  dialog.note.focus();
+  official.api.closeModal();
+  check('discard regression: warning focuses keep editing', official.document.activeElement === dialog.keep);
+  click(dialog.keep);
+  check('discard regression: keep editing hides prompt and restores field focus', open() && dialog.prompt.hidden && dialog.note.value === 'Keep editing this draft' && official.document.activeElement === dialog.note);
+  escape(dialog.state);
+  click(dialog.discard);
+  check('discard regression: idle confirmed discard closes and consumes approval', !open() && official.api.state() === null && !dialog.state.discardApproved);
+
+  dialog = await fresh();
+  check('discard regression: reopening starts with a hidden prompt and no approval', open() && dialog.prompt.hidden && !dialog.state.discardApproved);
+  dialog.note.value = 'Reopened dialog edit';
+  escape(dialog.state);
+  check('discard regression: reopened dialog starts with fresh confirmation state', open() && !dialog.prompt.hidden && !dialog.state.discardApproved);
+  dispose(dialog);
+
+  dialog = await fresh();
+  dialog.note.value = 'Management edit';
+  dialog.comment.value = 'Separate unsent comment';
+  official.api.closeModal();
+  save = pendingSave();
+  click(dialog.discard);
+  save.resolve({ success: true, changed: true });
+  await save.promise;
+  check('discard regression: management success preserves unsent comment and hides old prompt', open() && dialog.prompt.hidden && dialog.comment.value === 'Separate unsent comment' && !dialog.state.discardApproved);
+  const leave = { prevented: false, preventDefault() { this.prevented = true; } };
+  dialog.state.unloadHandler(leave);
+  check('discard regression: unsent comment still requests page-leave protection', leave.prevented && leave.returnValue === '');
+  escape(dialog.state);
+  check('discard regression: unsent comment gets a fresh close warning after save', open() && !dialog.prompt.hidden && dialog.comment.value === 'Separate unsent comment');
+  dispose(dialog);
+}
+
+async function residentChecks() {
+  const api = resident.api;
+  const doc = resident.document;
+  const modal = doc.getElementById('requestModal');
+  const tick = () => new Promise(resolve => setImmediate(resolve));
+  const click = node => node.listeners.click[0]();
+  const key = (node, value) => node.listeners.keydown[0]({ key: value, preventDefault() {} });
+  const closeKey = state => state.keyHandler({ key: 'Escape', preventDefault() {}, stopPropagation() {} });
+  const cleanClose = () => {
+    const state = api.state();
+    if (!state) return;
+    const comment = state.box.querySelector('[name="body"]');
+    const reason = state.box.querySelector('[data-reopen-reason]');
+    if (comment) comment.value = '';
+    if (reason) reason.value = '';
+    api.closeRequestModal();
+  };
+  const base = Object.assign({}, row, { status: 'open', note: 'Line one\n' + note, severity: 'high', residentConfirmation: null, resolutionUpdateId: 42, assignedOfficialName: 'PRIVATE ASSIGNEE', slaDueAt: 'PRIVATE TARGET', isPublic: true });
+  let requests = [];
+  let comments = [];
+  const reader = async (url, options) => {
+    requests.push({ url, options });
+    if (url.includes('list_comments')) return { success: true, comments };
+    if (url.includes('timeline')) return { success: true, updates: [{ actor_name: 'Actor ' + probe, actor_type: 'resident', to_status: 'open', note: 'Filed ' + probe, created_at: '2026-10-25 08:00:00' }] };
+    if (url.includes('list_attachments')) return { success: true, attachments: [{ id: 51, url: '../api/complaints/view_attachment.php?id=51' }] };
+    return { success: true };
+  };
+  const open = async (overrides = {}, read = reader) => {
+    cleanClose();
+    api.configure(read);
+    api.setRows([Object.assign({}, base, overrides)]);
+    await api.viewComplaint(7);
+    await tick();
+    return api.state();
+  };
+  let state = await open();
+  const box = state.box;
+  const html = box.innerHTML;
+  check('resident: actual reference category location date and escaped description', html.includes(escapeForTest(base.ref)) && html.includes(escapeForTest(base.cat)) && html.includes(escapeForTest(base.loc)) && html.includes(escapeForTest(base.date)) && html.includes(escapeForTest(base.description)));
+  check('resident: exactly three named tabs and one visible panel', box.querySelectorAll('[role="tab"]').length === 3 && box.querySelector('[role="tablist"]').getAttribute('aria-label') === 'Complaint details' && box.querySelectorAll('[role="tabpanel"]').filter(panel => !panel.hidden).length === 1 && box.getAttribute('role') === 'dialog' && box.getAttribute('aria-modal') === 'true');
+  check('resident: filing-only information and no administrative inputs', box.querySelector('.rc-information').querySelectorAll('dt').length === 1 && html.includes('>Date filed</dt>') && !box.querySelector('select') && !box.querySelector('[name="official_note"]') && !html.includes('Save updates'));
+  check('resident: all tabs omit assignment sharing targets and parent identities', !html.includes('data-complaint-triage') && !html.includes('data-complaint-own-sharing') && !html.includes('PRIVATE ASSIGNEE') && !html.includes('PRIVATE TARGET') && !html.includes('Unassigned') && !html.includes('Sharing') && !html.includes('PARENT-REF-XYZ'));
+  check('resident: opening only reads existing authorized detail endpoints', requests.length === 3 && requests.every(request => !request.options?.method) && requests.some(request => request.url.includes('list_attachments.php?complaint_id=7')));
+  const tabs = box.querySelectorAll('[role="tab"]');
+  key(tabs[0], 'ArrowRight');
+  check('resident: arrow key selects Timeline and moves focus', tabs[1].getAttribute('aria-selected') === 'true' && doc.activeElement === tabs[1] && !box.querySelector('#residentPanelTimeline').hidden);
+  key(tabs[1], 'End');
+  check('resident: End selects Comments and Home returns Overview', tabs[2].getAttribute('aria-selected') === 'true' && (key(tabs[2], 'Home'), tabs[0].getAttribute('aria-selected') === 'true'));
+  const input = box.querySelector('[name="body"]');
+  input.value = 'Unsent ' + probe;
+  click(tabs[2]); click(tabs[1]); click(tabs[0]);
+  check('resident: tab changes preserve unsent comment draft', input.value === 'Unsent ' + probe);
+  input.focus();
+  closeKey(state);
+  check('resident: Escape warns and focuses Keep editing without losing draft', modal.classList.contains('show') && !box.querySelector('[data-resident-unsaved]').hidden && doc.activeElement === box.querySelector('[data-resident-keep]') && input.value === 'Unsent ' + probe);
+  click(box.querySelector('[data-resident-keep]'));
+  check('resident: Keep editing hides warning and restores focus', box.querySelector('[data-resident-unsaved]').hidden && doc.activeElement === input && input.value === 'Unsent ' + probe);
+  const leave = { prevented: false, preventDefault() { this.prevented = true; } };
+  state.unloadHandler(leave);
+  check('resident: unsent comment requests page-leave protection', leave.prevented && leave.returnValue === '');
+  box.querySelector('.rc-close').focus();
+  let prevented = false;
+  state.keyHandler({ key: 'Tab', shiftKey: true, preventDefault() { prevented = true; } });
+  const footerClose = box.querySelector('.rc-footer').querySelectorAll('button').at(-1);
+  check('resident: Shift Tab wraps to footer Close', prevented && doc.activeElement === footerClose);
+  prevented = false;
+  state.keyHandler({ key: 'Tab', shiftKey: false, preventDefault() { prevented = true; } });
+  check('resident: forward Tab wraps to header Close', prevented && doc.activeElement === box.querySelector('.rc-close'));
+  const form = box.querySelector('[data-comment-form]');
+  const status = box.querySelector('[data-comment-status]');
+  let finish, reject, writes = 0;
+  api.configure(async (url) => {
+    if (url.includes('list_comments')) return { success: true, comments };
+    writes++;
+    return new Promise((resolve, fail) => { finish = resolve; reject = fail; });
+  });
+  const posting = form.listeners.submit[0]({ preventDefault() {} });
+  await form.listeners.submit[0]({ preventDefault() {} });
+  closeKey(state);
+  click(box.querySelector('[data-resident-discard]'));
+  check('resident: pending post blocks duplicate posts and all discard attempts', writes === 1 && modal.classList.contains('show') && form.querySelector('button').disabled && box.querySelector('[data-resident-discard]').disabled && input.value === 'Unsent ' + probe);
+  reject(new Error('Controlled comment failure'));
+  await posting;
+  check('resident: failed post preserves draft and recovers controls', input.value === 'Unsent ' + probe && !input.disabled && !form.querySelector('button').disabled && !box.querySelector('[data-resident-discard]').disabled && status.textContent.includes('Controlled comment failure'));
+  closeKey(state);
+  check('resident: failed post still requires close warning', modal.classList.contains('show') && !box.querySelector('[data-resident-unsaved]').hidden);
+  api.holdDrafts(7, { commentDraft: input.value, reopenReason: 'Separate held reason' });
+  const retry = form.listeners.submit[0]({ preventDefault() {} });
+  comments = [{ actor_type: 'resident', actor_name: 'Test & name', body: input.value, created_at: '2026-10-25 08:30:00' }];
+  finish({ success: true, id: 101 });
+  await retry;
+  check('resident: successful retry posts once updates list/count and clears draft', writes === 2 && input.value === '' && box.querySelector('[data-comment-count]').textContent === '(1)' && box.querySelector('[data-comment-tab-count]').textContent === '(1)' && box.querySelector('[data-comment-list]').innerHTML.includes('&lt;em data-review-probe&gt;') && box.querySelector('[data-resident-unsaved]').hidden);
+  check('resident: accepted comments clear only their held copy', api.heldDrafts(7).commentDraft === '' && api.heldDrafts(7).reopenReason === 'Separate held reason');
+  input.value = 'x'.repeat(2001);
+  await form.listeners.submit[0]({ preventDefault() {} });
+  check('resident: 2000 character limit rejects before a request', writes === 2 && input.value.length === 2001 && status.textContent.includes('2,000'));
+  const image = box.querySelector('#complaintAttachments').querySelector('img');
+  const photoLink = image.parentElement;
+  check('resident: evidence thumbnail and original link use authorized route', image.getAttribute('src') === '../api/complaints/view_attachment.php?id=51' && photoLink.getAttribute('href') === image.getAttribute('src') && image.getAttribute('alt').includes('Photo 1'));
+  image.listeners.error[0]();
+  check('resident: failed image offers accessible original link fallback', image.hidden && photoLink.querySelector('span').textContent.includes('Photo unavailable') && photoLink.querySelector('span').textContent.includes('Open original') && photoLink.getAttribute('href').includes('view_attachment.php?id=51'));
+  check('resident: empty photos timeline and comments have explicit states', api.renderAttachmentsHtml([]).includes('No photos attached.') && api.renderTimelineHtml([]).includes('No timeline entries yet.') && api.renderComplaintCommentsHtml([]).includes('No comments yet.'));
+  check('resident: timeline escapes actor status and note text', box.querySelector('#complaintTimeline').innerHTML.includes('Actor &lt;em') && !box.querySelector('#complaintTimeline').innerHTML.includes(probe));
+  api.holdDrafts(7, { commentDraft: 'Older held comment', reopenReason: 'Older held reason' });
+  closeKey(state);
+  click(box.querySelector('[data-resident-discard]'));
+  check('resident: idle discard closes and restores opener focus', !modal.classList.contains('show') && api.state() === null && doc.activeElement === state.opener);
+  check('resident: explicit discard clears recovery drafts while preserving recovery lock', !!api.heldDrafts(7) && api.heldDrafts(7).commentDraft === '' && api.heldDrafts(7).reopenReason === '');
+
+  api.configureResolution(async () => {}, async () => {});
+  state = await open();
+  check('resident: discarded recovery drafts do not return on reopen', state.box.querySelector('[name="body"]').value === '');
+  cleanClose();
+
+  state = await open({}, async () => { throw new Error('Read failed'); });
+  check('resident: failed reads have actionable timeline photo and comment states', state.box.querySelector('#complaintTimeline').textContent.includes('reopen') && state.box.querySelector('#complaintAttachments').textContent.includes('reopen') && state.box.querySelector('[data-comment-list]').textContent.includes('retry'));
+  cleanClose();
+
+  comments = [];
+  let current = Object.assign({}, base, { status: 'resolved', residentConfirmation: 'pending', resolutionUpdateId: 42 });
+  state = await open(current);
+  let section = state.box.querySelector('[data-resident-response]');
+  check('resident: resolved complaint retains confirm and reopen actions', !!section.querySelector('[data-confirm-resolution]') && !!section.querySelector('[data-reopen-toggle]') && !state.box.querySelector('select'));
+  let sent = [];
+  api.configure(reader);
+  api.configureResolution(async (url, options) => {
+    sent.push({ url, body: JSON.parse(options.body) });
+    current = Object.assign({}, current, { resolutionUpdateId: 43 });
+    return { ok: false, status: 409, text: async () => JSON.stringify({ success: false, message: 'Resolution changed.' }) };
+  }, async () => api.setRows([current]));
+  state.box.querySelector('[name="body"]').value = 'Keep separate discussion draft';
+  click(section.querySelector('[data-confirm-resolution]'));
+  await tick();
+  check('resident: stale confirmation sends the expected resolution token without auto retry', sent.length === 1 && sent[0].url.endsWith('/confirm_resolution.php') && sent[0].body.expected_resolution_id === 42 && section.dataset.resolutionToken === '43' && section.querySelector('[data-response-status]').textContent.includes('Review the current status'));
+  check('resident: stale resolution recovery preserves unsent comment', state.box.querySelector('[name="body"]').value === 'Keep separate discussion draft');
+  api.configureResolution(async (url, options) => {
+    sent.push({ url, body: JSON.parse(options.body) });
+    current = Object.assign({}, current, { residentConfirmation: 'confirmed' });
+    return { ok: true, status: 200, text: async () => JSON.stringify({ success: true, message: 'Confirmed.' }) };
+  }, async () => api.setRows([current]));
+  click(section.querySelector('[data-confirm-resolution]'));
+  await tick();
+  check('resident: fresh confirmation uses refreshed token and hides confirm when confirmed', sent[1].body.expected_resolution_id === 43 && !section.querySelector('[data-confirm-resolution]') && !!section.querySelector('[data-reopen-toggle]'));
+  const toggle = section.querySelector('[data-reopen-toggle]');
+  click(toggle);
+  const reason = section.querySelector('[data-reopen-reason]');
+  check('resident: reopen toggle exposes reason and moves focus', !section.querySelector('[data-reopen-panel]').hidden && doc.activeElement === reason);
+  reason.value = 'Still broken ' + probe;
+  api.configureResolution(async (url, options) => {
+    sent.push({ url, body: JSON.parse(options.body) });
+    current = Object.assign({}, current, { status: 'open', residentConfirmation: 'reopened' });
+    return { ok: true, status: 200, text: async () => JSON.stringify({ success: true, message: 'Reopened.' }) };
+  }, async () => api.setRows([current]));
+  click(section.querySelector('[data-reopen-submit]'));
+  await tick();
+  check('resident: reopening preserves expected token reason and updated status', sent[2].url.endsWith('/reopen_complaint.php') && sent[2].body.expected_resolution_id === 43 && sent[2].body.reason === 'Still broken ' + probe && state.box.querySelector('[data-complaint-status]').textContent === 'open' && !section.querySelector('[data-response-actions]'));
+  check('resident: resolution refresh updates comment count without erasing draft', state.box.querySelector('[data-comment-tab-count]').textContent === '(0)' && state.box.querySelector('[name="body"]').value === 'Keep separate discussion draft');
+  check('resident: no administrative or sharing assignment mutation requests', sent.every(request => /\/(confirm_resolution|reopen_complaint)\.php$/.test(request.url)) && !api.complaintResolutionActionsHtml(Object.assign({}, current, { status: 'open' })));
+  cleanClose();
+}
+
+function escapeForTest(value) {
+  return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+behaviorChecks().then(discardSaveChecks).then(residentChecks).then(() => {
   console.log(`RENDER + BEHAVIOR ${passed} passed, ${failed} failed`);
   process.exit(failed === 0 ? 0 : 1);
 }).catch(error => { console.error(error); process.exit(1); });
