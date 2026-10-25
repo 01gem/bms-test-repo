@@ -359,7 +359,7 @@ if (count($officialNameParts) >= 2) {
         </div>
         <div class="card">
           <div class="table-toolbar">
-            <input type="text" class="table-search" id="residentSearch" placeholder="Search by name, address…" />
+            <input type="text" class="table-search" id="residentSearch" placeholder="Search residents…" />
             <select class="table-filter" id="residentStatusFilter">
               <option value="all">All Status</option>
               <option value="active">Active</option>
@@ -371,6 +371,11 @@ if (count($officialNameParts) >= 2) {
               <thead><tr><th>Resident ID</th><th>Full Name</th><th>Address</th><th>Contact</th><th>Status</th><th class="action-column">Actions</th></tr></thead>
               <tbody id="residentsBody"></tbody>
             </table>
+          </div>
+          <div class="registry-pagination" id="residentPager">
+            <button type="button" class="btn-action view" id="residentPrevBtn"><i class="fa-solid fa-chevron-left"></i> Previous</button>
+            <span id="residentPageLabel">Page 1 of 1</span>
+            <button type="button" class="btn-action view" id="residentNextBtn">Next <i class="fa-solid fa-chevron-right"></i></button>
           </div>
         </div>
       </div>

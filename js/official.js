@@ -322,10 +322,18 @@ function renderDashActivity() {
 }
 
 // ── RESIDENTS TABLE ───────────────────────
+const RESIDENT_PAGE_SIZE = 25;
+let RESIDENT_PAGE = 1;
+let RESIDENT_FILTERED = [];
+
 function renderResidents(data) {
   const tbody = document.getElementById('residentsBody');
   if (!tbody) return;
-  tbody.innerHTML = data.map(r => {
+  const totalPages = Math.max(1, Math.ceil(data.length / RESIDENT_PAGE_SIZE));
+  RESIDENT_PAGE = Math.min(Math.max(RESIDENT_PAGE, 1), totalPages);
+  const start = (RESIDENT_PAGE - 1) * RESIDENT_PAGE_SIZE;
+  const pageRows = data.slice(start, start + RESIDENT_PAGE_SIZE);
+  tbody.innerHTML = pageRows.map(r => {
     const toggleLabel = r.status === 'active' ? 'Deactivate' : 'Activate';
     return `
     <tr>
@@ -347,19 +355,43 @@ function renderResidents(data) {
     </tr>
   `;
   }).join('');
+  const pageLabel = document.getElementById('residentPageLabel');
+  const prevBtn = document.getElementById('residentPrevBtn');
+  const nextBtn = document.getElementById('residentNextBtn');
+  if (pageLabel) pageLabel.textContent = `Page ${RESIDENT_PAGE} of ${totalPages}`;
+  if (prevBtn) prevBtn.disabled = RESIDENT_PAGE <= 1;
+  if (nextBtn) nextBtn.disabled = RESIDENT_PAGE >= totalPages;
 }
 function initResidentTable() {
-  renderResidents(RESIDENTS);
+  filterResidents();
   document.getElementById('residentSearch')?.addEventListener('input', filterResidents);
-  document.getElementById('residentStatusFilter')?.addEventListener('change', filterResidents);
+  document.getElementById('residentStatusFilter')?.addEventListener('change', applyResidentFilters);
+  document.getElementById('residentPrevBtn')?.addEventListener('click', () => {
+    RESIDENT_PAGE--;
+    renderResidents(RESIDENT_FILTERED);
+  });
+  document.getElementById('residentNextBtn')?.addEventListener('click', () => {
+    RESIDENT_PAGE++;
+    renderResidents(RESIDENT_FILTERED);
+  });
+}
+function applyResidentFilters() {
+  filterResidents();
 }
 function filterResidents() {
-  const q = document.getElementById('residentSearch').value.toLowerCase();
-  const s = document.getElementById('residentStatusFilter').value;
-  renderResidents(RESIDENTS.filter(r => {
-    return (r.name.toLowerCase().includes(q) || r.addr.toLowerCase().includes(q)) &&
+  const search = document.getElementById('residentSearch');
+  const statusSelect = document.getElementById('residentStatusFilter');
+  if (!search || !statusSelect) return;
+  const q = search.value.trim().toLowerCase();
+  const s = statusSelect.value;
+  RESIDENT_PAGE = 1;
+  RESIDENT_FILTERED = RESIDENTS.filter(r => {
+    const searchable = [r.id, r.name, r.addr, r.purok_zone, r.contact]
+      .map(value => String(value || '').toLowerCase());
+    return searchable.some(value => value.includes(q)) &&
            (s === 'all' || r.status === s);
-  }));
+  });
+  renderResidents(RESIDENT_FILTERED);
 }
 
 // ── DOC REQUESTS TABLE ────────────────────
@@ -2679,7 +2711,7 @@ async function fetchJson(url, options) {
 async function loadResidents() {
   const data = await fetchJson(`${API_BASE}/residents/list.php`);
   RESIDENTS = (data.residents || []).map(mapResidentRow);
-  renderResidents(RESIDENTS);
+  filterResidents();
   renderVulnerabilityRegistry();
   renderWorkforceInsights();
 }
