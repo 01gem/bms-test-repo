@@ -59,7 +59,7 @@ if ($residentName === '') {
 }
 $dateFiled = date('M d, Y');
 $status = 'open';
-$note = 'Received. Awaiting assignment.';
+$note = 'Received. Pending review.';
 
 $stmt = $db->prepare("INSERT INTO complaints
   (resident_id, reference_no, resident_name, category, severity, location_text, description, date_filed, status, official_note, extra_fields_json)

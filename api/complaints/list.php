@@ -39,6 +39,7 @@ $columns = "c.id, c.resident_id, c.reference_no, c.resident_name, c.category, c.
         COALESCE((SELECT MAX(u.id) FROM complaint_updates u
                   WHERE u.complaint_id = c.id AND u.to_status = 'resolved'
                     AND COALESCE(u.from_status, '') <> 'resolved'), 0) AS resolution_update_id,
+        (SELECT COUNT(*) FROM complaint_attachments photo WHERE photo.complaint_id = c.id AND photo.deleted_at IS NULL) AS attachment_count,
         c.is_public";
 if ($officialSession) {
   $sql = "SELECT {$columns},

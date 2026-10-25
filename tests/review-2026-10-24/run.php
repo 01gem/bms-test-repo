@@ -952,6 +952,8 @@ PHP);
   fclose($pipes[1]); fclose($pipes[2]); proc_close($blank);
   check('sms not configured keeps its shape', str_contains($blankOut, 'not configured'), $blankOut);
 
+  require __DIR__ . '/../complaint-interface/api-checks.php';
+
   // Community board.
   exec_sql($db, 'INSERT INTO complaints (resident_id,reference_no,resident_name,category,severity,location_text,description,date_filed,status,official_note,is_public) VALUES (?,?,?,?,?,?,?,?,?,?,1)',
     'isssssssss', [$resident, 'FIX-PUBLIC', 'SECRET-NAME', 'Noise / Public Disturbance', 'low', 'SECRET-PLACE', 'SECRET-TEXT', 'not-a-date', 'open', 'SECRET-NOTE']);

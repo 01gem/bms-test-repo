@@ -7,6 +7,7 @@
  */
 
 require_once __DIR__ . '/../common.php';
+require_once __DIR__ . '/_official_note.php';
 session_start();
 enforce_active_session();
 
@@ -21,7 +22,7 @@ require_post();
 $input = read_json_input();
 $id = (int)($input['id'] ?? 0);
 $hasOfficialNote = array_key_exists('official_note', $input);
-$officialNote = $hasOfficialNote ? trim((string)$input['official_note']) : null;
+$officialNote = complaint_read_official_note($input);
 $severity = trim((string)($input['severity'] ?? ''));
 if ($id <= 0) {
   json_error('Valid complaint id is required.');

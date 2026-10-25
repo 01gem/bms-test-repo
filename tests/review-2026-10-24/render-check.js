@@ -1,8 +1,6 @@
 'use strict';
 
-// The official complaint modal is intentionally compact.
-// It omits Assignment and Sharing/related reports, including their Save controls
-// and related-report navigation. Opening it must not call those initializers.
+// Regression coverage for escaped complaint rendering and the editing workspace.
 
 const fs = require('fs');
 const path = require('path');
@@ -44,8 +42,8 @@ function element(tag) {
   };
   el.classList = {
     classes: new Set(),
-    add(name) { this.classes.add(name); },
-    remove(name) { this.classes.delete(name); },
+    add(...names) { names.forEach(name => this.classes.add(name)); },
+    remove(...names) { names.forEach(name => this.classes.delete(name)); },
     contains(name) { return this.classes.has(name); },
   };
   el.setAttribute = (name, value) => {
@@ -56,6 +54,8 @@ function element(tag) {
     if (name.startsWith('data-')) el.dataset[name.slice(5)] = String(value);
   };
   el.getAttribute = (name) => (el.attrs.has(name) ? el.attrs.get(name) : null);
+  el.removeAttribute = name => el.attrs.delete(name);
+  el.focus = () => {};
   el.addEventListener = (type, fn) => {
     (el.listeners[type] || (el.listeners[type] = [])).push(fn);
   };
@@ -87,6 +87,7 @@ function element(tag) {
 
 function matches(el, selector) {
   if (!selector) return false;
+  if (selector.includes(',')) return selector.split(',').some(part => matches(el, part.trim()));
   if (selector.startsWith('[') && selector.endsWith(']')) {
     const body = selector.slice(1, -1);
     const eq = body.indexOf('=');
@@ -158,7 +159,10 @@ function parseChildren(html, parent) {
 function makeDocument() {
   const nodes = new Map();
   return {
+    body: element('body'),
+    activeElement: element('button'),
     addEventListener() {},
+    removeEventListener() {},
     getElementById(id) {
       if (!nodes.has(id)) nodes.set(id, element('div'));
       const node = nodes.get(id);
@@ -182,6 +186,9 @@ function loadScript(file, exportName, extras) {
     requestAnimationFrame(fn) { return fn(); },
     localStorage: { getItem() { return null; }, setItem() {} },
     sessionStorage: { getItem() { return null; }, setItem() {} },
+    addEventListener() {},
+    removeEventListener() {},
+    confirm() { return true; },
   };
   context.window = context;
   context.globalThis = context;
@@ -200,6 +207,22 @@ globalThis.__official = {
   renderDashOpenComplaints,
   renderComplaintsAdmin,
   viewComplaint,
+  closeModal,
+  updateComplaint,
+  complaintDetailDirty,
+  complaintManagementValues,
+  complaintCommentsSectionHtml,
+  initComplaintComments,
+  state() { return complaintDetailState; },
+  configure(callback) {
+    fetchJson = callback;
+    loadAuditLog = async () => {};
+    refreshDashboard = async () => {};
+    loadComplaints = async () => {};
+    refreshComplaintTimeline = async () => {};
+    syncComplaintWorkspace = () => {};
+    refreshComplaintsAdmin = () => {};
+  },
   setRows(rows) { COMPLAINTS_ADMIN = rows; },
 };
 globalThis.__calls = { assignment: 0, sharing: 0 };
@@ -264,7 +287,8 @@ official.api.renderComplaintsAdmin([hostile]);
 const list = official.document.getElementById('complaintsAdminList').innerHTML;
 noProbe(list, 'official list');
 check('official list status class is allowlisted', list.includes('class="status-badge status-unknown"') && !list.includes('status-open&quot;'));
-check('official note stays inside the value', list.includes('value="He said &quot;no&quot; &lt;em data-review-probe&gt;text&lt;/em&gt;"'));
+check('official note renders as escaped text', list.includes('He said &quot;no&quot; &lt;em data-review-probe&gt;text&lt;/em&gt;'));
+check('official card has one details action and no mutation fields', (list.match(/<button/g) || []).length === 1 && list.includes('View details') && !list.includes('<select') && !list.includes('updateComplaint('));
 check('official note creates no extra attribute', !/value="[^"]*"\s+data-review-probe=/.test(list));
 check('official article id is escaped', list.includes('id="comp-&lt;em data-review-probe&gt;text&lt;/em&gt;"'));
 
@@ -306,12 +330,10 @@ function assertOfficialCompact(box, label) {
     official.context.__calls.assignment === 0 && official.context.__calls.sharing === 0);
   noProbe(html, label);
   check(label + ' shows facts, description, and official note',
-    html.includes('>Filed By</dt>')
+    html.includes('Filed by <strong>')
     && html.includes('Ada &amp; ')
-    && html.includes('>Category</dt>')
-    && html.includes('>Location</dt>')
+    && html.includes('Noise &amp; ')
     && html.includes('Purok &quot;1&quot;')
-    && html.includes('>Date Filed</dt>')
     && html.includes('class="status-badge status-open"')
     && html.includes('data-complaint-status')
     && html.includes('>Low</span>')
@@ -332,8 +354,14 @@ function assertOfficialCompact(box, label) {
     && html.includes('id="complaintTimeline"')
     && html.includes('data-complaint-comments')
     && html.includes('data-comment-form')
-    && html.includes('>Photos</h4>')
+    && html.includes('>Photos <span')
     && html.includes('id="complaintAttachments"'));
+  check(label + ' has three accessible tabs and management form',
+    box.querySelectorAll('[role="tab"]').length === 3
+    && box.getAttribute('role') === 'dialog'
+    && html.includes('aria-controls="complaintPanelTimeline"')
+    && html.includes('name="official_note"')
+    && html.includes('Save updates'));
 }
 
 assertOfficialCompact(openOfficial(false), 'staff open');
@@ -358,5 +386,96 @@ check('resident detail has triage and sharing summaries', residentDetail.include
 check('resident detail hides parent identity', !residentDetail.includes('PARENT-REF-XYZ') && !residentDetail.includes('99999'));
 check('resident detail has no mutation controls', !residentDetail.includes('data-save-sharing') && !residentDetail.includes('data-save-assignment') && !residentDetail.includes('data-open-related-report'));
 
-console.log(`RENDER ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
+async function behaviorChecks() {
+  // Let the initial asynchronous detail reads settle before stubbing writes.
+  await new Promise(resolve => setImmediate(resolve));
+  const state = official.api.state();
+  const status = state.form.elements.namedItem('status');
+  const severity = state.form.elements.namedItem('severity');
+  const noteField = state.form.elements.namedItem('official_note');
+  status.value = 'open';
+  severity.value = 'low';
+  state.saved = JSON.stringify(official.api.complaintManagementValues(state.form));
+  noteField.value = 'Draft note\nSecond line';
+  const tabs = state.box.querySelectorAll('[role="tab"]');
+  tabs[1].listeners.click[0]();
+  tabs[2].listeners.click[0]();
+  check('switching tabs retains unsaved note', noteField.value === 'Draft note\nSecond line' && official.api.complaintDetailDirty());
+  check('tab selection exposes only the selected panel', state.box.querySelector('#complaintPanelOverview').hidden && state.box.querySelector('#complaintPanelTimeline').hidden && !state.box.querySelector('#complaintPanelComments').hidden);
+
+  let requests = [];
+  let finish;
+  official.api.configure(async (url, options) => {
+    requests.push({ url, body: JSON.parse(options.body) });
+    return new Promise(resolve => { finish = resolve; });
+  });
+  status.value = 'resolved';
+  severity.value = 'critical';
+  const pending = official.api.updateComplaint(7);
+  await official.api.updateComplaint(7);
+  check('repeated save cannot submit a duplicate request', requests.length === 1 && state.busy && state.form.querySelector('button').disabled);
+  official.api.closeModal();
+  check('close is blocked during a save', official.api.state() === state && state.feedback.textContent.includes('wait'));
+  check('resolution uses the existing endpoint with note and no assignment', requests[0].url.endsWith('/notify_resolved.php') && requests[0].body.official_note === noteField.value && !('assigned_official_id' in requests[0].body));
+  finish({ success: true, changed: true, sms_status: 'skipped' });
+  await pending;
+  check('successful save retains modal and resets dirty state', official.api.state() === state && !official.api.complaintDetailDirty() && state.feedback.textContent === 'Updates saved.' && !state.busy);
+  check('successful save re-enables controls', !status.disabled && !severity.disabled && !noteField.disabled && !state.form.querySelector('button').disabled);
+
+  official.api.configure(async () => { throw new Error('HTTP 500'); });
+  noteField.value = 'Keep this after a failure';
+  await official.api.updateComplaint(7);
+  check('failed save retains entered values and shows no false success', noteField.value === 'Keep this after a failure' && state.feedback.dataset.kind === 'error' && state.feedback.textContent.includes('HTTP 500') && official.api.complaintDetailDirty());
+
+  official.api.configure(async () => ({ success: true, changed: false }));
+  noteField.value = 'Draft note\nSecond line';
+  await official.api.updateComplaint(7);
+  check('unchanged save reports no changes', state.feedback.textContent === 'No changes to save.');
+
+  let calls = 0;
+  official.api.configure(async () => { calls++; return { success: true }; });
+  noteField.value = 'x'.repeat(256);
+  await official.api.updateComplaint(7);
+  check('overlong notes are rejected before sending', calls === 0 && state.feedback.textContent.includes('255'));
+  noteField.value = 'Unsaved';
+  official.api.closeModal();
+  check('unsaved close exposes a discard choice', !state.box.querySelector('[data-unsaved-prompt]').hidden);
+  state.box.querySelector('[data-keep-editing]').listeners.click[0]();
+  check('cancel discard keeps the draft and dialog', official.api.state() === state && noteField.value === 'Unsaved');
+  state.box.querySelector('[data-discard-edits]').listeners.click[0]();
+  check('confirmed discard releases modal state', official.api.state() === null && !official.document.getElementById('actionModal').classList.contains('show'));
+
+  let commentWrites = 0;
+  let commentFinish;
+  let comments = [];
+  official.api.configure(async (url) => {
+    if (url.includes('list_comments')) return { success: true, comments };
+    commentWrites++;
+    return new Promise(resolve => { commentFinish = resolve; });
+  });
+  const commentRoot = element('div');
+  commentRoot.innerHTML = official.api.complaintCommentsSectionHtml();
+  await official.api.initComplaintComments(commentRoot, 7);
+  const commentForm = commentRoot.querySelector('[data-comment-form]');
+  const commentInput = commentForm.elements.namedItem('body');
+  commentInput.value = 'One comment only';
+  const commentPending = commentForm.listeners.submit[0]({ preventDefault() {} });
+  await commentForm.listeners.submit[0]({ preventDefault() {} });
+  check('repeated comment submit posts once', commentWrites === 1 && commentForm.querySelector('button').disabled);
+  comments = [{ body: 'One comment only', actor_name: 'Tester', actor_type: 'official' }];
+  commentFinish({ success: true });
+  await commentPending;
+  check('comment success clears draft and updates count', commentInput.value === '' && commentRoot.querySelector('[data-comment-count]').textContent === '(1)');
+  commentInput.value = 'x'.repeat(2001);
+  await commentForm.listeners.submit[0]({ preventDefault() {} });
+  check('overlong comments never submit', commentWrites === 1 && commentRoot.querySelector('[data-comment-status]').textContent.includes('2,000'));
+  official.api.configure(async () => { throw new Error('Connection failed'); });
+  commentInput.value = 'Keep failed comment';
+  await commentForm.listeners.submit[0]({ preventDefault() {} });
+  check('failed comment keeps draft and enables retry', commentInput.value === 'Keep failed comment' && !commentForm.querySelector('button').disabled && commentRoot.querySelector('[data-comment-status]').textContent.includes('Connection failed'));
+}
+
+behaviorChecks().then(() => {
+  console.log(`RENDER + BEHAVIOR ${passed} passed, ${failed} failed`);
+  process.exit(failed === 0 ? 0 : 1);
+}).catch(error => { console.error(error); process.exit(1); });

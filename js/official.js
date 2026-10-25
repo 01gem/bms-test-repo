@@ -1269,42 +1269,28 @@ function renderComplaintsAdmin(data) {
     <article class="complaint-admin-row" id="comp-${escapeHtml(String(c.ref || '').replace(/^#/, ''))}">
       <div class="ca-top">
         <div>
-          <div class="ca-ref">${escapeHtml(c.ref)} · ${escapeHtml(c.filer)}</div>
-          <div class="ca-title">${escapeHtml(c.cat)} — ${escapeHtml(c.loc)}</div>
+          <div class="ca-ref">${escapeHtml(c.ref)}</div>
+          <div class="ca-title"><span>${escapeHtml(c.cat)}</span><span class="ca-location"><i class="fa-solid fa-location-dot" aria-hidden="true"></i> ${escapeHtml(c.loc)}</span></div>
         </div>
-        <span class="status-badge status-${complaintStatusToken(c.status)}">${escapeHtml(c.status)}</span>
+        <div class="complaint-badges"><span>Status <span class="status-badge status-${complaintStatusToken(c.status)}">${escapeHtml(c.status)}</span></span><span>Severity ${severityChip(c.severity)}</span></div>
       </div>
       <div class="ca-meta">
         <span><i class="fa-regular fa-calendar"></i> Filed: ${escapeHtml(c.date)}</span>
-        ${severityChip(c.severity)}
+        <span>Filed by ${escapeHtml(c.filer)}</span>
         ${complaintCardSlaHtml(c)}
-        ${c.note ? `<span><i class="fa-solid fa-comment"></i> ${escapeHtml(c.note)}</span>` : ''}
       </div>
       ${preview ? `<p class="ca-desc">${escapeHtml(previewText)}</p>` : ''}
+      <p class="ca-note"><strong>Official note</strong> <span>${escapeHtml(c.note || 'No official note yet.')}</span></p>
       <div class="ca-actions">
-        <label class="ca-field">Status
-          <select class="ca-status-select" id="compStatus-${domId}">
-            <option value="open"          ${c.status==='open'          ?'selected':''}>Open</option>
-            <option value="investigating" ${c.status==='investigating' ?'selected':''}>Investigating</option>
-            <option value="resolved"      ${c.status==='resolved'      ?'selected':''}>Resolved</option>
-          </select>
-        </label>
-        <label class="ca-field">Severity
-          <select class="ca-status-select" id="compSeverity-${domId}">
-            <option value="low"      ${c.severity==='low'      ?'selected':''}>Low</option>
-            <option value="medium"   ${c.severity==='medium'   ?'selected':''}>Medium</option>
-            <option value="high"     ${c.severity==='high'     ?'selected':''}>High</option>
-            <option value="critical" ${c.severity==='critical' ?'selected':''}>Critical</option>
-          </select>
-        </label>
-        <div class="ca-action-btns">
-          <button class="btn-action resolve" onclick="updateComplaint(${domId})">Save</button>
-          <button class="btn-action view" onclick="viewComplaint(${domId})">View</button>
-        </div>
+        ${c.attachmentCount != null ? `<span class="ca-attachments"><i class="fa-solid fa-paperclip" aria-hidden="true"></i> ${Number(c.attachmentCount)} attachment${c.attachmentCount === 1 ? '' : 's'}</span>` : ''}
+        <button type="button" class="complaint-btn" data-view-complaint="${domId}">View details <span aria-hidden="true">→</span></button>
       </div>
     </article>
   `;
   }).join('');
+  el.querySelectorAll('[data-view-complaint]').forEach(button => {
+    button.addEventListener('click', () => viewComplaint(Number(button.dataset.viewComplaint)));
+  });
 }
 
 // Keep in sync with the identical severityChip() in js/resident.js.
@@ -1357,7 +1343,8 @@ function renderAttachmentsHtml(attachments) {
     const href = escapeHtml(a.url);
     const label = `Photo ${index + 1}`;
     return `<a class="complaint-photo-link" href="${href}" target="_blank" rel="noopener" title="Open ${label}">
-      ${label}
+      <img src="${href}" alt="${label} evidence thumbnail" loading="lazy">
+      <span>${label} <span aria-hidden="true">↗</span></span>
     </a>`;
   }).join('') + '</div>';
 }
@@ -1365,7 +1352,7 @@ function renderAttachmentsHtml(attachments) {
 // Keep in sync with the identical complaint comment helpers in js/resident.js.
 function complaintCommentsSectionHtml() {
   return `<section data-complaint-comments class="complaint-section">
-    <h4>Comments</h4>
+    <h4>Discussion <span data-comment-count></span></h4>
     <div data-comment-list aria-live="polite" class="complaint-scroll-well">Loading comments…</div>
     <form data-comment-form class="complaint-controls">
       <label class="complaint-field">Add a comment (up to 2,000 characters)
@@ -1407,7 +1394,13 @@ async function initComplaintComments(root, complaintId) {
   let busy = true;
   const refresh = async () => {
     const comments = await loadComplaintComments(complaintId);
-    if (root.isConnected) list.innerHTML = renderComplaintCommentsHtml(comments);
+    if (root.isConnected) {
+      list.innerHTML = renderComplaintCommentsHtml(comments);
+      const count = root.querySelector('[data-comment-count]');
+      if (count) count.textContent = `(${comments.length})`;
+      const tabCount = root.closest('[role="dialog"]')?.querySelector('[data-comment-tab-count]');
+      if (tabCount) tabCount.textContent = `(${comments.length})`;
+    }
   };
   form.addEventListener('submit', async event => {
     event.preventDefault();
@@ -2201,137 +2194,264 @@ function initComplaintSharing(box, complaint, seq) {
   recover(false);
 }
 
-function viewComplaint(id) {
-  const seq = ++officialComplaintDetailSeq;
-  const c = COMPLAINTS_ADMIN.find(x => Number(x.id) === Number(id));
-  if (!c) return;
+let complaintDetailState = null;
 
-  const box = document.getElementById('actionModalBox');
-  if (!box) return;
-  box.dataset.complaintId = String(c.id);
-  box.dataset.detailSeq = String(seq);
-  const timelineToken = `${Date.now()}-${Math.random()}`;
-  const attachmentToken = `${Date.now()}-${Math.random()}`;
-  box.dataset.timelineToken = timelineToken;
-  box.dataset.attachmentToken = attachmentToken;
-  box.classList.add('detail-modal-box');
-
-  const descriptionHtml = c.description
-    ? escapeHtml(c.description).replace(/\r?\n/g, '<br>')
-    : '<span class="complaint-muted">No description provided.</span>';
-
-  const noteHtml = c.note
-    ? escapeHtml(c.note)
-    : '<span class="complaint-muted">No official note yet.</span>';
-
-  box.innerHTML = `
-    <div class="complaint-detail-head">
-      <div>
-        <p class="complaint-detail-kicker">Complaint</p>
-        <h3>${escapeHtml(c.ref)}</h3>
-      </div>
-      <button type="button" class="complaint-detail-x" onclick="closeModal()" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
-    </div>
-    <div class="complaint-detail-scroll">
-      <div class="complaint-detail-facts">
-        ${profileDetailField('Filed By', c.filer)}
-        ${profileDetailField('Category', c.cat)}
-        ${profileDetailField('Location', c.loc)}
-        ${profileDetailField('Date Filed', c.date)}
-        <div class="detail-field"><dt>Status</dt><dd><span class="status-badge status-${complaintStatusToken(c.status)}" data-complaint-status>${escapeHtml(c.status)}</span></dd></div>
-        <div class="detail-field"><dt>Severity</dt><dd>${severityChip(c.severity)}</dd></div>
-      </div>
-      <div class="complaint-detail-copy">
-        <section class="complaint-panel">
-          <h4>Description</h4>
-          <div class="complaint-panel-body">${descriptionHtml}</div>
-        </section>
-        <section class="complaint-panel complaint-panel-note">
-          <h4>Official note</h4>
-          <div class="complaint-panel-body">${noteHtml}</div>
-        </section>
-      </div>
-      <p class="complaint-detail-hint">Status, severity, and notes can be updated using the controls on the complaint card. Close this view to make changes.</p>
-      ${renderComplaintExtraFieldsHtml(c.extraFieldsDisplay)}
-      ${complaintResidentResponseSectionHtml(c)}
-      <div class="complaint-detail-split">
-        <section class="complaint-section">
-          <h4>Timeline</h4>
-          <div id="complaintTimeline" class="complaint-scroll-well"></div>
-        </section>
-        ${complaintCommentsSectionHtml()}
-      </div>
-      <section class="complaint-section complaint-section-block">
-        <h4>Photos</h4>
-        <div id="complaintAttachments" class="complaint-photo-well"></div>
-      </section>
-    </div>
-    <button type="button" class="complaint-detail-close" onclick="closeModal()">Close</button>
-  `;
-  initComplaintComments(box.querySelector('[data-complaint-comments]'), c.id);
-  document.getElementById('actionModal').classList.add('show');
-  const modal = document.getElementById('actionModal');
-  const sameOfficialDetail = () => modal
-    && modal.classList.contains('show')
-    && Number(box.dataset.complaintId) === Number(c.id);
-  loadComplaintTimeline(c.id)
-    .then(updates => {
-      if (!sameOfficialDetail() || box.dataset.timelineToken !== timelineToken) return;
-      const el = box.querySelector('#complaintTimeline');
-      if (el) el.innerHTML = renderTimelineHtml(updates);
-    })
-    .catch(() => {
-      if (!sameOfficialDetail() || box.dataset.timelineToken !== timelineToken) return;
-      const el = box.querySelector('#complaintTimeline');
-      if (el) el.textContent = 'Timeline unavailable.';
-    });
-  loadComplaintAttachments(c.id)
-    .then(atts => {
-      if (!sameOfficialDetail() || box.dataset.attachmentToken !== attachmentToken) return;
-      const el = box.querySelector('#complaintAttachments');
-      if (el) el.innerHTML = renderAttachmentsHtml(atts);
-    })
-    .catch(() => {
-      if (!sameOfficialDetail() || box.dataset.attachmentToken !== attachmentToken) return;
-      const el = box.querySelector('#complaintAttachments');
-      if (el) el.textContent = 'Photos unavailable.';
-    });
+function complaintManagementValues(form) {
+  return {
+    status: form.elements.namedItem('status').value,
+    severity: form.elements.namedItem('severity').value,
+    official_note: form.elements.namedItem('official_note').value.trim()
+  };
 }
 
-async function updateComplaint(id) {
+function complaintDetailDirty() {
+  const state = complaintDetailState;
+  return !!state && (JSON.stringify(complaintManagementValues(state.form)) !== state.saved
+    || !!state.box.querySelector('[name="body"]')?.value.trim());
+}
+
+function complaintDetailCanClose() {
+  if (!complaintDetailState) return true;
+  if (complaintDetailState.busy) {
+    complaintDetailState.feedback.textContent = 'Saving updates. Please wait before closing.';
+    return false;
+  }
+  if (!complaintDetailDirty() || complaintDetailState.discardApproved) return true;
+  const state = complaintDetailState;
+  state.returnFocus = document.activeElement;
+  state.box.querySelector('[data-unsaved-prompt]').hidden = false;
+  state.box.querySelector('[data-keep-editing]').focus();
+  return false;
+}
+
+function viewComplaint(id) {
   const c = COMPLAINTS_ADMIN.find(x => Number(x.id) === Number(id));
-  if (!c) return;
-  const status = document.getElementById(`compStatus-${id}`).value;
-  const severity = document.getElementById(`compSeverity-${id}`)?.value || c.severity || 'medium';
-  const mutationEpoch = ++complaintMutationEpoch;
-  complaintMutationInFlight = true;
-  try {
-    const resolving = status === 'resolved';
-    const data = await fetchJson(`${API_BASE}/complaints/${resolving ? 'notify_resolved' : 'update_status'}.php`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, status, severity })
+  if (!c || !complaintDetailCanClose()) return;
+  const box = document.getElementById('actionModalBox');
+  const modal = document.getElementById('actionModal');
+  if (!box || !modal) return;
+  const seq = ++officialComplaintDetailSeq;
+  const opener = complaintDetailState?.opener || document.activeElement;
+  if (complaintDetailState) releaseComplaintDetail();
+  box.dataset.complaintId = String(c.id);
+  box.dataset.detailSeq = String(seq);
+  box.classList.add('detail-modal-box', 'complaint-workspace');
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-modal', 'true');
+  box.setAttribute('aria-labelledby', 'complaintDetailTitle');
+  box.innerHTML = `
+    <header class="complaint-workspace-head">
+      <div class="complaint-heading-row">
+        <div><p class="ca-ref">${escapeHtml(c.ref)}</p><h3 id="complaintDetailTitle">${escapeHtml(c.cat)}</h3></div>
+        <div class="complaint-badges">
+          <span>Status <span data-complaint-status class="status-badge status-${complaintStatusToken(c.status)}">${escapeHtml(c.status)}</span></span>
+          <span>Severity <span data-complaint-severity>${severityChip(c.severity)}</span></span>
+        </div>
+        <button type="button" class="complaint-detail-x" onclick="closeModal()" aria-label="Close complaint details">×</button>
+      </div>
+      <p class="complaint-filing"><span>${escapeHtml(c.loc)}</span><span>Filed by <strong>${escapeHtml(c.filer)}</strong> · ${escapeHtml(c.date)}</span></p>
+      <div class="complaint-tabs" role="tablist" aria-label="Complaint details">
+        ${['Overview', 'Timeline', 'Comments'].map((name, i) => `<button type="button" role="tab" id="complaintTab${name}" aria-controls="complaintPanel${name}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}">${name}${name === 'Comments' ? ' <span data-comment-tab-count></span>' : ''}</button>`).join('')}
+      </div>
+    </header>
+    <div class="complaint-workspace-scroll">
+      <div class="complaint-workspace-grid">
+        <div class="complaint-tab-content">
+          <section role="tabpanel" id="complaintPanelOverview" aria-labelledby="complaintTabOverview" tabindex="0">
+            <section class="complaint-overview-section"><h4>Description</h4><div class="complaint-description">${escapeHtml(c.description || 'No description provided.')}</div></section>
+            ${renderComplaintExtraFieldsHtml(c.extraFieldsDisplay)}
+            <section class="complaint-overview-section"><h4>Official note</h4><div data-official-note class="complaint-description">${escapeHtml(c.note || 'No official note yet.')}</div></section>
+            <div data-resident-response-slot>${complaintResidentResponseSectionHtml(c)}</div>
+            <section class="complaint-overview-section"><h4>Photos <span data-photo-count class="complaint-meta"></span></h4><div id="complaintAttachments" aria-live="polite">Loading photos…</div></section>
+            <div data-response-target class="complaint-meta">${complaintResponseTargetHtml(c)}</div>
+          </section>
+          <section role="tabpanel" id="complaintPanelTimeline" aria-labelledby="complaintTabTimeline" tabindex="0" hidden><h4>Timeline</h4><div id="complaintTimeline" aria-live="polite">Loading timeline…</div></section>
+          <section role="tabpanel" id="complaintPanelComments" aria-labelledby="complaintTabComments" tabindex="0" hidden>${complaintCommentsSectionHtml()}</section>
+        </div>
+        <aside class="complaint-manage complaint-section" aria-labelledby="complaintManageTitle">
+          <h4 id="complaintManageTitle">Manage complaint</h4>
+          <form data-complaint-manage class="complaint-controls">
+            <div class="complaint-manage-selects">
+              <label class="complaint-field">Status<select name="status">${['open', 'investigating', 'resolved'].map(value => `<option value="${value}" ${c.status === value ? 'selected' : ''}>${value[0].toUpperCase() + value.slice(1)}</option>`).join('')}</select></label>
+              <label class="complaint-field">Severity<select name="severity">${['low', 'medium', 'high', 'critical'].map(value => `<option value="${value}" ${c.severity === value ? 'selected' : ''}>${value[0].toUpperCase() + value.slice(1)}</option>`).join('')}</select></label>
+            </div>
+            <label class="complaint-field">Official note<textarea name="official_note" rows="5" aria-describedby="complaintNoteHint"></textarea></label>
+            <span id="complaintNoteHint" class="complaint-meta">Up to 255 characters. Updates are recorded in the timeline.</span>
+            <button type="submit" class="complaint-btn">Save updates</button>
+            <p data-save-feedback role="status" aria-live="polite" aria-atomic="true" class="complaint-save-feedback"></p>
+          </form>
+        </aside>
+      </div>
+    </div>
+    <footer class="complaint-workspace-footer">
+      <div data-unsaved-prompt hidden><p role="alert">You have unsaved edits or a comment. Discard them?</p><div class="complaint-control-row"><button type="button" data-keep-editing class="complaint-btn">Keep editing</button><button type="button" data-discard-edits class="complaint-btn complaint-btn-ghost">Discard changes</button></div></div>
+      <span>Complaint details</span><button type="button" class="complaint-btn complaint-btn-ghost" onclick="closeModal()">Close</button>
+    </footer>
+  `;
+  const form = box.querySelector('[data-complaint-manage]');
+  form.elements.namedItem('official_note').value = c.note || '';
+  const state = { box, form, opener, busy: false, feedback: box.querySelector('[data-save-feedback]'), saved: JSON.stringify(complaintManagementValues(form)) };
+  complaintDetailState = state;
+  box.querySelector('[data-keep-editing]').addEventListener('click', () => {
+    box.querySelector('[data-unsaved-prompt]').hidden = true;
+    state.returnFocus?.focus();
+  });
+  box.querySelector('[data-discard-edits]').addEventListener('click', () => {
+    state.discardApproved = true;
+    closeModal();
+  });
+  form.addEventListener('submit', event => { event.preventDefault(); updateComplaint(c.id); });
+  const tabs = Array.from(box.querySelectorAll('[role="tab"]'));
+  const activate = tab => {
+    tabs.forEach(item => {
+      const selected = item === tab;
+      item.setAttribute('aria-selected', String(selected));
+      item.tabIndex = selected ? 0 : -1;
+      box.querySelector('#' + item.getAttribute('aria-controls')).hidden = !selected;
     });
-    const savedMessage = data.message || `${c.ref} status updated to "${status}".`;
-    try {
-      await loadComplaints();
-      await loadAuditLog();
-      await refreshDashboard();
-      syncOpenComplaintResponse(id);
-      const title = data.changed ? (resolving ? 'Complaint Resolved' : 'Complaint Updated') : 'Complaint Unchanged';
-      showToastAdmin(title, savedMessage);
-    } catch (refreshError) {
-      showToastAdmin('Complaint Saved', 'Saved. Refresh the page to see the latest details.');
+  };
+  tabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => activate(tab));
+    tab.addEventListener('keydown', event => {
+      const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
+        : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
+        : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : null;
+      if (next === null) return;
+      event.preventDefault();
+      activate(tabs[next]);
+      tabs[next].focus();
+    });
+  });
+  modal.classList.add('show');
+  state.oldOverflow = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';
+  state.keyHandler = event => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeModal(); }
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(box.querySelectorAll('button, select, textarea, a[href], [tabindex="0"]'))
+      .filter(node => !node.disabled && !node.closest('[hidden]') && node.getClientRects().length);
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (event.shiftKey && (document.activeElement === first || !box.contains(document.activeElement))) {
+      event.preventDefault(); last?.focus();
+    } else if (!event.shiftKey && (document.activeElement === last || !box.contains(document.activeElement))) {
+      event.preventDefault(); first?.focus();
     }
-  } catch (err) {
-    showToastAdmin('Update Failed', err.message);
-  } finally {
-    if (mutationEpoch === complaintMutationEpoch) {
-      complaintMutationInFlight = false;
-    }
+  };
+  document.addEventListener('keydown', state.keyHandler, true);
+  state.unloadHandler = event => {
+    if (state.busy || complaintDetailDirty()) { event.preventDefault(); event.returnValue = ''; }
+  };
+  window.addEventListener('beforeunload', state.unloadHandler);
+  box.querySelector('.complaint-detail-x').focus();
+  initComplaintComments(box.querySelector('[data-complaint-comments]'), c.id);
+  refreshComplaintTimeline(state, c.id);
+  loadComplaintAttachments(c.id).then(attachments => {
+    if (complaintDetailState !== state) return;
+    box.querySelector('#complaintAttachments').innerHTML = renderAttachmentsHtml(attachments);
+    box.querySelector('[data-photo-count]').textContent = `(${attachments.length})`;
+    box.querySelectorAll('.complaint-photo-link img').forEach(img => img.addEventListener('error', () => {
+      img.hidden = true;
+      img.parentElement.classList.add('photo-unavailable');
+      img.parentElement.querySelector('span').textContent = 'Photo unavailable · Open original';
+    }));
+  }).catch(() => {
+    if (complaintDetailState === state) box.querySelector('#complaintAttachments').textContent = 'Photos unavailable. Close and reopen this complaint to retry.';
+  });
+}
+
+function complaintResponseTargetHtml(c) {
+  return `${c.slaDueAt ? 'Response target: ' + escapeHtml(String(c.slaDueAt)) + ' · ' : ''}${escapeHtml(complaintTriageStateText(c))}${c.escalatedAt ? ' · Flagged: ' + escapeHtml(String(c.escalatedAt)) : ''}`;
+}
+
+async function refreshComplaintTimeline(state, id) {
+  const token = String(++officialComplaintDetailSeq);
+  state.timelineToken = token;
+  try {
+    const updates = await loadComplaintTimeline(id);
+    if (complaintDetailState === state && state.timelineToken === token) state.box.querySelector('#complaintTimeline').innerHTML = renderTimelineHtml(updates);
+  } catch {
+    if (complaintDetailState === state && state.timelineToken === token) state.box.querySelector('#complaintTimeline').textContent = 'Timeline unavailable. Close and reopen this complaint to retry.';
   }
 }
 
+function syncComplaintWorkspace(c) {
+  const box = complaintDetailState?.box;
+  if (!box || Number(box.dataset.complaintId) !== Number(c.id)) return;
+  const badge = box.querySelector('[data-complaint-status]');
+  badge.textContent = c.status;
+  badge.className = `status-badge status-${complaintStatusToken(c.status)}`;
+  box.querySelector('[data-complaint-severity]').innerHTML = severityChip(c.severity);
+  box.querySelector('[data-official-note]').textContent = c.note || 'No official note yet.';
+  box.querySelector('[data-resident-response-slot]').innerHTML = complaintResidentResponseSectionHtml(c);
+  box.querySelector('[data-response-target]').innerHTML = complaintResponseTargetHtml(c);
+}
+
+async function updateComplaint(id) {
+  const state = complaintDetailState;
+  const c = COMPLAINTS_ADMIN.find(x => Number(x.id) === Number(id));
+  if (!c || !state || state.busy || Number(state.box.dataset.complaintId) !== Number(id)) return;
+  const values = complaintManagementValues(state.form);
+  if (Array.from(values.official_note).length > 255) {
+    state.feedback.dataset.kind = 'error';
+    state.feedback.textContent = 'Shorten the official note to 255 characters before saving.';
+    state.form.elements.namedItem('official_note').focus();
+    return;
+  }
+  state.busy = true;
+  complaintMutationInFlight = true;
+  ++complaintMutationEpoch;
+  const controls = Array.from(state.form.querySelectorAll('button, select, textarea'));
+  const focusedControl = document.activeElement;
+  controls.forEach(node => { node.disabled = true; });
+  state.feedback.dataset.kind = 'saving';
+  state.feedback.textContent = 'Saving updates…';
+  try {
+    const data = await fetchJson(`${API_BASE}/complaints/${values.status === 'resolved' ? 'notify_resolved' : 'update_status'}.php`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, ...values })
+    });
+    // Apply the acknowledged values even if the subsequent list refresh fails.
+    const oldStatus = c.status;
+    c.status = values.status;
+    c.severity = values.severity;
+    c.note = values.official_note;
+    if (oldStatus !== c.status) {
+      c.residentConfirmation = c.status === 'resolved' ? 'pending' : (oldStatus !== 'resolved' && c.residentConfirmation === 'reopened' ? 'reopened' : null);
+      c.confirmedAt = null;
+    }
+    state.form.elements.namedItem('official_note').value = c.note;
+    state.saved = JSON.stringify(values);
+    refreshComplaintsAdmin();
+    syncComplaintWorkspace(c);
+    state.feedback.dataset.kind = 'success';
+    state.feedback.textContent = data.changed === false ? 'No changes to save.' : 'Updates saved.';
+    if (data.sms_status === 'failed') state.feedback.textContent += ' SMS notification failed; the complaint was saved.';
+    try {
+      await loadComplaints();
+      const latest = COMPLAINTS_ADMIN.find(item => Number(item.id) === Number(id));
+      if (latest) {
+        state.form.elements.namedItem('status').value = latest.status;
+        state.form.elements.namedItem('severity').value = latest.severity;
+        state.form.elements.namedItem('official_note').value = latest.note || '';
+        state.saved = JSON.stringify(complaintManagementValues(state.form));
+        syncComplaintWorkspace(latest);
+      }
+    } catch {
+      state.feedback.textContent += ' The latest complaint list could not be loaded. Reload to verify.';
+    }
+    await refreshComplaintTimeline(state, id);
+    // Refresh ancillary views without turning an acknowledged save into a failure.
+    await Promise.allSettled([loadAuditLog(), refreshDashboard()]);
+  } catch (error) {
+    state.feedback.dataset.kind = 'error';
+    state.feedback.textContent = `Could not confirm the save. ${error.message || 'Check your connection.'} Your entries are kept; retry or reload to verify.`;
+  } finally {
+    state.busy = false;
+    complaintMutationInFlight = false;
+    controls.forEach(node => { node.disabled = false; });
+    if (complaintDetailState === state && controls.includes(focusedControl) && document.activeElement === document.body) focusedControl.focus();
+  }
+}
 function mapResidentRow(row) {
   return {
     dbId: Number(row.id),
@@ -2434,6 +2554,7 @@ function mapComplaintRow(row) {
     date: row.date_filed,
     status: row.status,
     note: row.official_note || '',
+    attachmentCount: row.attachment_count == null ? null : complaintNonNegativeInt(row.attachment_count),
     residentConfirmation: row.resident_confirmation || null,
     confirmedAt: row.confirmed_at || null,
     reopenedAt: row.reopened_at || null,
@@ -4603,7 +4724,28 @@ function showModal(title, body) {
   `;
   document.getElementById('actionModal').classList.add('show');
 }
-function closeModal() { document.getElementById('actionModal').classList.remove('show'); }
+function releaseComplaintDetail() {
+  const state = complaintDetailState;
+  if (!state) return;
+  document.removeEventListener('keydown', state.keyHandler, true);
+  window.removeEventListener('beforeunload', state.unloadHandler);
+  document.body.style.overflow = state.oldOverflow;
+  state.box.classList.remove('complaint-workspace');
+  state.box.removeAttribute('role');
+  state.box.removeAttribute('aria-modal');
+  state.box.removeAttribute('aria-labelledby');
+  complaintDetailState = null;
+}
+
+function closeModal() {
+  if (!complaintDetailCanClose()) return;
+  const opener = complaintDetailState?.opener;
+  releaseComplaintDetail();
+  document.getElementById('actionModal').classList.remove('show');
+  // Saving rerenders the card, so locate its replacement when necessary.
+  if (opener?.isConnected) opener.focus();
+  else if (opener?.dataset.viewComplaint) document.querySelector(`[data-view-complaint="${opener.dataset.viewComplaint}"]`)?.focus();
+}
 
 function complaintStatusToken(status) {
   const token = String(status || '').toLowerCase();

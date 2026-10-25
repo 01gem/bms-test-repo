@@ -19,6 +19,12 @@ if (!function_exists('recovery_send_reset_sms')) {
   }
 }
 
+// Preserve the isolated evidence root even when php.ini omits E from variables_order.
+$testStorage = getenv('COMPLAINT_ATTACHMENT_STORAGE_DIR');
+if (is_string($testStorage) && $testStorage !== '') {
+  $_ENV['COMPLAINT_ATTACHMENT_STORAGE_DIR'] = $testStorage;
+  $_SERVER['COMPLAINT_ATTACHMENT_STORAGE_DIR'] = $testStorage;
+}
 require_once dirname(__DIR__, 2) . '/db.php';
 $configured = getenv('BARANGAY_DB_NAME');
 if (is_string($configured) && preg_match('/^[A-Za-z0-9_]+$/', $configured) === 1) {
