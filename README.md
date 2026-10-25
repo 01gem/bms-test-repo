@@ -123,8 +123,8 @@ an engine bug, not a data bug.
   See `db.php` for the current session cookie settings. Adding CSRF is
   a cross-cutting change (every POST endpoint plus a middleware check)
   and is not in scope for this deployment pass.
-- No migration runner. `database.sql` is the single source of truth for
-  schema. If you are upgrading a database built with the old `migration_*.sql`
+- No migration runner. `database.sql` is the fresh-install schema; additive
+  upgrade scripts live in `database/migrations/`. If upgrading a database built with the old `migration_*.sql`
   chain, apply those migrations once before deleting them; then
   `database.sql` becomes the fresh-install entry point.
 - Document-specific extra fields (e.g. civil_status for Barangay
@@ -136,6 +136,17 @@ an engine bug, not a data bug.
   for age — the value the resident typed is stored for audit but the
   generator computes it fresh from birthdate when the modal left age
   blank.
+
+## Document request concurrency rollout
+
+Existing installations must apply the additive request migration before enabling
+the updated handlers. See [rollout, dispatch/recovery and test evidence](docs/request-concurrency.md).
+The consolidated schema remains the entry point for fresh installations.
+The [local controlled rollout and final acceptance](docs/request-rollout-acceptance.md)
+have passed; the local issue is closed.
+Run `python scripts/update-source-code.py` to refresh the local source text snapshot.
+See [packaging and maintenance](docs/maintenance.md) for runtime-only deployment
+ZIPs, scheduled log rotation, protected backup retention and cleanup verification.
 
 ## License
 

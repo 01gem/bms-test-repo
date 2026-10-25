@@ -1,0 +1,10 @@
+{
+  "base": "http://127.0.0.1:0",
+  "db": "capstone_fix24_example",
+  "storage": "GENERATED_PRIVATE_STORAGE_DIRECTORY",
+  "session": "GENERATED_PRIVATE_SESSION_DIRECTORY",
+  "resident_cookie": "",
+  "admin_cookie": "",
+  "complaint_id": 0,
+  "legacy_url": ""
+}

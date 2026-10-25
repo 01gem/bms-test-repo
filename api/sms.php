@@ -67,12 +67,12 @@ function send_sms(string $to, string $content): array {
   if ($response === false) {
     $masked = preg_replace('/^(\+63\d{3})\d{4}(\d{3})$/', '$1****$2', $to) ?? '***';
     error_log("SMS cURL failure to {$masked}: {$curlError}");
-    return ['ok' => false, 'error' => $curlError !== '' ? $curlError : 'unreachable', 'message_id' => null];
+    return ['ok' => false, 'error' => $curlError !== '' ? $curlError : 'unreachable', 'message_id' => null, 'uncertain' => true];
   }
   if (!in_array($httpStatus, [200, 201, 202], true)) {
     $decoded = json_decode($response, true);
     $msg = is_array($decoded) && !empty($decoded['message']) ? (string)$decoded['message'] : "HTTP {$httpStatus}";
-    return ['ok' => false, 'error' => mb_substr($msg, 0, 200), 'message_id' => null];
+    return ['ok' => false, 'error' => mb_substr($msg, 0, 200), 'message_id' => null, 'uncertain' => $httpStatus >= 500];
   }
 
   $decoded = json_decode($response, true);
@@ -231,10 +231,10 @@ function notify_resident(
       return ['status' => 'sent', 'reason' => 'SMS sent.'];
     }
     sms_log_write($db, $residentId, $endpoint, $to, 'failed', $result['error'] ?? 'unknown', null);
-    return ['status' => 'failed', 'reason' => 'SMS send failed: ' . ($result['error'] ?? 'unknown')];
+    return ['status' => 'failed', 'reason' => 'SMS send failed: ' . ($result['error'] ?? 'unknown'), 'uncertain' => $result['uncertain'] ?? true];
   } catch (Throwable $error) {
     error_log('notify_resident failed: ' . $error->getMessage());
-    return ['status' => 'failed', 'reason' => 'SMS notification could not be prepared.'];
+    return ['status' => 'failed', 'reason' => 'SMS notification could not be prepared.', 'uncertain' => true];
   }
 }
 

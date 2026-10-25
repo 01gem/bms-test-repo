@@ -1,7 +1,12 @@
 <?php
 // Optional browser fixture, restricted to the disposable regression schema.
 if (PHP_SAPI !== 'cli') exit(1);
-$config = json_decode(file_get_contents(__DIR__ . '/../review-2026-10-24/server.json'), true);
+$serverConfig = __DIR__ . '/../review-2026-10-24/server.json';
+if (!is_file($serverConfig)) {
+  fwrite(STDERR, "Run php tests/review-2026-10-24/run.php first to generate the private test-server configuration.\n");
+  exit(1);
+}
+$config = json_decode(file_get_contents($serverConfig), true);
 if (!preg_match('/^capstone_fix24_[0-9]+$/', $config['db'] ?? '')) exit(1);
 require dirname(__DIR__, 2) . '/db.php';
 $DB_NAME = $config['db'];

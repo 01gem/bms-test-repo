@@ -386,60 +386,95 @@ function renderDocRequests(data) {
     </tr>
   `).join('');
 }
-async function updateReqStatus(ref, newStatus, officialNote = '') {
-  try {
-    const payload = { reference_no: ref, status: newStatus };
-    if (officialNote) payload.official_note = officialNote;
-    const data = await fetchJson(`${API_BASE}/requests/update_status.php`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Portal-Source': 'official'
-      },
-      body: JSON.stringify(payload)
-    });
-    await loadRequests();
-    await loadAuditLog();
-    await refreshDashboard();
-    showToastAdmin('Status Updated', data.message || `${ref} status set to ${newStatus}.`);
-    const modalEl = document.getElementById('actionModal');
-    if (modalEl?.classList.contains('show')) {
-      const fresh = DOC_REQUESTS.find(r => r.ref === ref);
-      if (fresh) showRequestDetails(fresh.id);
-    }
-  } catch (err) {
-    showToastAdmin('Update Failed', err.message);
-  }
+// Intent survives network failures. The displayed version is part of the identity.
+const REQUEST_PENDING = new Set();
+const REQUEST_RETRIES = new Map();
+const REQUEST_CANCEL_DRAFTS = new Map();
+const REQUEST_CONFLICT_MESSAGE = 'This request changed. Review the current information before trying again.';
+function requestBusy(ref, busy) {
+  document.querySelectorAll('[data-request-ref]').forEach(button => {
+    if (button.dataset.requestRef === ref) button.disabled = busy || button.dataset.eligible !== 'true';
+  });
 }
-async function updateReqPayment(ref, paymentStatus) {
+function requestIntentKey(endpoint, payload) { return endpoint + ':' + JSON.stringify(payload); }
+function requestStoredIntent(key) {
+  if (REQUEST_RETRIES.has(key)) return REQUEST_RETRIES.get(key);
   try {
-    const data = await fetchJson(`${API_BASE}/requests/update_payment.php`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reference_no: ref, payment_status: paymentStatus })
-    });
-    await loadRequests();
-    await loadAuditLog();
-    showToastAdmin('Payment Updated', data.message || `${ref} payment set to ${paymentStatus}.`);
-    const modalEl = document.getElementById('actionModal');
-    if (modalEl?.classList.contains('show')) {
-      const fresh = DOC_REQUESTS.find(r => r.ref === ref);
-      if (fresh) showRequestDetails(fresh.id);
-    }
-  } catch (err) {
-    showToastAdmin('Payment Update Failed', err.message);
-  }
+    const saved = JSON.parse(sessionStorage.getItem('request-intent:' + key) || 'null');
+    if (saved?.operation_id) { REQUEST_RETRIES.set(key, saved); return saved; }
+  } catch { /* storage unavailable */ }
+  return null;
 }
-
-async function cancelReq(ref) {
-  const reason = window.prompt('Brief reason for cancelling this request (required):');
+function requestForgetIntent(key) {
+  REQUEST_RETRIES.delete(key);
+  try { sessionStorage.removeItem('request-intent:' + key); } catch { /* storage unavailable */ }
+}
+function requestDetailIsOpen(ref) {
+  const modal = document.getElementById('actionModal');
+  const detail = document.getElementById('actionModalBox')?.querySelector?.('[data-request-details-ref]');
+  return !!modal?.classList.contains('show') && detail?.dataset.requestDetailsRef === ref;
+}
+async function requestAction(endpoint, ref, payload) {
+  if (REQUEST_PENDING.has(ref)) return null;
+  if (!Number.isInteger(payload.expected_version) || payload.expected_version < 1) throw new Error('Reopen this request to review its current information.');
+  const key = requestIntentKey(endpoint, payload);
+  let intent = requestStoredIntent(key);
+  if (!intent) {
+    intent = { ...payload, operation_id: crypto.randomUUID() };
+    REQUEST_RETRIES.set(key, intent);
+    try { sessionStorage.setItem('request-intent:' + key, JSON.stringify(intent)); } catch { /* in-memory retry remains available */ }
+  }
+  REQUEST_PENDING.add(ref); requestBusy(ref, true);
+  try {
+    const data = await fetchJson(`${API_BASE}/requests/${endpoint}.php`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Portal-Source': 'official' }, body: JSON.stringify(intent)
+    });
+    requestForgetIntent(key);
+    return data;
+  } catch (error) {
+    if (error.data?.operation_finished) requestForgetIntent(key);
+    if (error.status === 409 && error.data?.code !== 'in_progress') {
+      requestForgetIntent(key);
+      // Keep all form fields and cancellation drafts. Refresh never resubmits the decision.
+      try { await loadRequests(); } catch { /* original conflict remains authoritative */ }
+      const current = DOC_REQUESTS.find(r => r.ref === ref);
+      if (current && requestDetailIsOpen(ref)) showRequestDetails(current.id);
+      error.message = REQUEST_CONFLICT_MESSAGE;
+    } else if (error.status && error.status < 500 && error.data?.code !== 'in_progress') requestForgetIntent(key);
+    throw error;
+  } finally { REQUEST_PENDING.delete(ref); requestBusy(ref, false); }
+}
+async function requestRefreshAfterSuccess(ref) {
+  try {
+    await loadRequests(); await loadAuditLog(); await refreshDashboard();
+    const fresh = DOC_REQUESTS.find(r => r.ref === ref);
+    if (fresh && requestDetailIsOpen(ref)) showRequestDetails(fresh.id);
+  } catch (error) { showToastAdmin('Saved; Refresh Failed', `The action was saved. Reload to see the current request. ${escapeHtml(error.message)}`); }
+}
+async function updateReqStatus(ref, newStatus, officialNote = '', expectedVersion) {
+  try {
+    const data = await requestAction('update_status', ref, { reference_no: ref, status: newStatus, official_note: officialNote, expected_version: expectedVersion });
+    if (!data) return;
+    REQUEST_CANCEL_DRAFTS.delete(ref);
+    showToastAdmin('Status Updated', data.message || `${ref} status is ${newStatus}.`);
+    await requestRefreshAfterSuccess(ref);
+  } catch (err) { showToastAdmin('Update Failed', escapeHtml(err.message)); }
+}
+async function updateReqPayment(ref, paymentStatus, expectedVersion) {
+  try {
+    const data = await requestAction('update_payment', ref, { reference_no: ref, payment_status: paymentStatus, expected_version: expectedVersion });
+    if (!data) return;
+    showToastAdmin('Payment Updated', data.message || `${ref} payment is ${paymentStatus}.`);
+    await requestRefreshAfterSuccess(ref);
+  } catch (err) { showToastAdmin('Payment Update Failed', escapeHtml(err.message)); }
+}
+async function cancelReq(ref, expectedVersion) {
+  if (REQUEST_PENDING.has(ref)) return;
+  const reason = window.prompt('Brief reason for cancelling this request (required):', REQUEST_CANCEL_DRAFTS.get(ref) || '');
   if (reason === null) return;
-  const note = reason.trim();
-  if (!note) {
-    showToastAdmin('Cancellation Failed', 'A brief cancellation reason is required.');
-    return;
-  }
-  await updateReqStatus(ref, 'cancelled', note);
+  const note = reason.trim(); REQUEST_CANCEL_DRAFTS.set(ref, note);
+  if (!note) { showToastAdmin('Cancellation Failed', 'A brief cancellation reason is required.'); return; }
+  await updateReqStatus(ref, 'cancelled', note, expectedVersion);
 }
 
 function prettifyFieldName(fieldKey) {
@@ -512,14 +547,21 @@ function renderDocumentGenerationFields(req) {
   }).join('');
 }
 
-function openDocumentGenerationModal(ref) {
+function openDocumentGenerationModal(ref, expectedVersion) {
   const req = DOC_REQUESTS.find(r => r.ref === ref);
   if (!req) return;
   if (!DOC_TEMPLATE_FIELDS[req.type]) {
     showToastAdmin('Template Missing', `No template configuration found for "${req.type}".`);
     return;
   }
-  ACTIVE_DOC_GEN_REQUEST = req;
+  if (REQUEST_PENDING.has(ref)) return;
+  if (req.rowVersion !== expectedVersion) {
+    showToastAdmin('Request Changed', REQUEST_CONFLICT_MESSAGE);
+    showRequestDetails(req.id); return;
+  }
+  ACTIVE_DOC_GEN_REQUEST = { ...req };
+  const generateButton = document.getElementById('generateDocBtn');
+  if (generateButton) { generateButton.disabled = false; generateButton.textContent = 'Generate & Preview'; }
   const modal = document.getElementById('docGenModal');
   const title = document.getElementById('docGenTitle');
   const meta = document.getElementById('docGenMeta');
@@ -535,50 +577,59 @@ function openDocumentGenerationModal(ref) {
 }
 
 async function generateAndPreviewDocument() {
-  if (!ACTIVE_DOC_GEN_REQUEST) return;
+  const request = ACTIVE_DOC_GEN_REQUEST;
+  if (!request || REQUEST_PENDING.has(request.ref)) return;
+  if (request.needsReview) {
+    const current = request.reviewSnapshot;
+    if (!current || current.status !== 'pending') return;
+    if (!window.confirm(`Review ${current.ref}: status ${current.status}, payment ${current.paymentStatus}. Keep the entered fields and prepare a new generation attempt?`)) return;
+    request.rowVersion = current.rowVersion;
+    request.needsReview = false;
+    const reviewButton = document.getElementById('generateDocBtn');
+    if (reviewButton) reviewButton.textContent = 'Generate Document';
+    return; // Reviewing never automatically submits a new business decision.
+  }
   const fields = {};
-  document.querySelectorAll('#docGenFields [data-doc-field]').forEach((input) => {
+  document.querySelectorAll('#docGenFields [data-doc-field]').forEach(input => {
     const key = input.getAttribute('data-doc-field');
-    if (!key) return;
-    fields[key] = (input.value || '').trim();
+    if (key) fields[key] = (input.value || '').trim();
   });
   fields.official_name = FIXED_OFFICIAL_NAME;
   fields.official_position = FIXED_OFFICIAL_POSITION;
-
+  const button = document.getElementById('generateDocBtn');
   const previewEmpty = document.getElementById('docGenPreviewEmpty');
   const previewWrap = document.getElementById('docGenPreviewWrap');
   const previewFrame = document.getElementById('docGenPreviewFrame');
-  if (previewWrap) previewWrap.style.display = 'none';
-  if (previewFrame) previewFrame.src = 'about:blank';
-  if (previewEmpty) {
-    previewEmpty.innerHTML = '<span class="docgen-loading"><i class="fa-solid fa-spinner fa-spin"></i> Generating document...</span>';
-    previewEmpty.style.display = 'flex';
-  }
+  if (button) button.disabled = true;
+  if (previewEmpty) { previewEmpty.textContent = 'Generating document...'; previewEmpty.style.display = 'flex'; }
   try {
-    const data = await fetchJson(`${API_BASE}/requests/generate_document.php`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: ACTIVE_DOC_GEN_REQUEST.id,
-        fields
-      })
-    });
-
-    if (previewFrame && data.pdf_path) {
-      const separator = data.pdf_path.includes('?') ? '&' : '?';
-      previewFrame.src = `${data.pdf_path}${separator}t=${Date.now()}`;
+    const data = await requestAction('generate_document', request.ref, { id: request.id, fields, expected_version: request.rowVersion });
+    if (!data) return;
+    // Closing or switching the modal cannot redirect this operation's response.
+    if (ACTIVE_DOC_GEN_REQUEST === request) {
+      if (previewFrame && data.pdf_path) previewFrame.src = data.pdf_path;
+      if (previewWrap) previewWrap.style.display = 'block';
+      if (previewEmpty) previewEmpty.style.display = 'none';
+      request.generated = true;
     }
-    if (previewWrap) previewWrap.style.display = 'block';
-    if (previewEmpty) previewEmpty.style.display = 'none';
-
-    await updateReqStatus(ACTIVE_DOC_GEN_REQUEST.ref, 'processing');
-    showToastAdmin('Document Generated', `Generated PDF for ${ACTIVE_DOC_GEN_REQUEST.ref}.`);
+    showToastAdmin('Document Generated', `Generated PDF for ${escapeHtml(request.ref)}.`);
+    await requestRefreshAfterSuccess(request.ref);
   } catch (err) {
-    if (previewEmpty) {
-      previewEmpty.textContent = `Generation failed: ${err.message}`;
-      previewEmpty.style.display = 'flex';
+    if (ACTIVE_DOC_GEN_REQUEST === request && previewEmpty) {
+      previewEmpty.textContent = err.message; previewEmpty.style.display = 'flex';
+      if (err.status === 409 && err.data?.code !== 'in_progress') {
+        // Keep entered fields. A second click explicitly acknowledges the refreshed data.
+        request.needsReview = true;
+        const current = DOC_REQUESTS.find(r => r.ref === request.ref);
+        request.reviewSnapshot = current ? { ...current } : null;
+        const meta = document.getElementById('docGenMeta');
+        if (meta && current) meta.textContent = `${REQUEST_CONFLICT_MESSAGE} Current status: ${current.status}; payment: ${current.paymentStatus}. Entered fields were retained.`;
+        if (button) button.textContent = 'Review Current Request';
+      }
     }
-    showToastAdmin('Generation Failed', err.message);
+    showToastAdmin('Generation Failed', escapeHtml(err.message));
+  } finally {
+    if (ACTIVE_DOC_GEN_REQUEST === request && button) button.disabled = !!request.generated || (!!request.needsReview && request.reviewSnapshot?.status !== 'pending');
   }
 }
 
@@ -1205,38 +1256,30 @@ function findResidentContactForRequest(req) {
   return byName && byName.contact && byName.contact !== '' && byName.contact !== '-' ? byName.contact : '';
 }
 
-async function notifyPickupReady(ref) {
+async function notifyPickupReady(ref, expectedVersion, resend = false) {
+  if (REQUEST_PENDING.has(ref)) return;
   const req = DOC_REQUESTS.find(r => r.ref === ref);
   if (!req) return;
-  try {
-    const payload = { reference_no: ref };
-    let contact = findResidentContactForRequest(req);
-    if (!contact) {
-      const contactOverride = window.prompt(
-        `Notify ${req.resident} via SMS that ${ref} is ready for pickup.\nEnter contact number, or leave blank to look up from records.`,
-        ''
-      );
-      if (contactOverride && contactOverride.trim() !== '') {
-        payload.contact = contactOverride.trim();
-      }
-    } else {
-      payload.contact = contact;
-    }
-    const data = await fetchJson(`${API_BASE}/requests/notify_ready.php`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Portal-Source': 'official'
-      },
-      body: JSON.stringify(payload)
-    });
-    await loadRequests();
-    await loadAuditLog();
-    await refreshDashboard();
-    showToastAdmin('Resident Notified', data.message || `${ref} SMS pickup notification sent.`);
-  } catch (err) {
-    showToastAdmin('Notify Failed', err.message);
+  let acknowledgeUncertain = false;
+  if (resend) {
+    acknowledgeUncertain = req.pickupNotice?.state === 'uncertain';
+    const message = acknowledgeUncertain
+      ? 'The earlier delivery is uncertain. Check provider records first. Send an explicit retry that may duplicate the SMS?'
+      : 'Resend the pickup SMS? The server enforces a five-minute cooldown.';
+    if (!window.confirm(message)) return;
   }
+  let contact = findResidentContactForRequest(req);
+  if (!contact) {
+    const entered = window.prompt(`Enter the mobile number for ${ref}:`, '');
+    if (entered === null) return;
+    contact = entered.trim();
+  }
+  try {
+    const data = await requestAction('notify_ready', ref, { reference_no: ref, contact, resend, acknowledge_uncertain: acknowledgeUncertain, expected_version: expectedVersion });
+    if (!data) return;
+    showToastAdmin('Pickup Notice', escapeHtml(data.message || 'Pickup notification recorded.'));
+    await requestRefreshAfterSuccess(ref);
+  } catch (err) { showToastAdmin('Notify Failed', escapeHtml(err.message)); }
 }
 function refreshDocRequestsTable() {
   const q = (document.getElementById('reqSearch')?.value || '').toLowerCase();
@@ -2539,6 +2582,8 @@ function mapRequestRow(row) {
   return {
     id: Number(row.id),
     ref: row.reference_no,
+    rowVersion: Number(row.row_version),
+    pickupNotice: row.pickup_notice || null,
     residentId: row.resident_id ? Number(row.resident_id) : 0,
     resident: row.resident_name || 'Resident',
     type: row.document_type,
@@ -2615,9 +2660,9 @@ async function fetchJson(url, options) {
 
   if (!res.ok) {
     if (data && data.message) {
-      throw new Error(data.message);
+      const error = new Error(data.message); error.status = res.status; error.data = data; throw error;
     }
-    throw new Error(`Server request failed (HTTP ${res.status}).`);
+    const error = new Error(`Server request failed (HTTP ${res.status}).`); error.status = res.status; error.data = data; throw error;
   }
 
   if (!data || typeof data !== 'object') {
@@ -2625,7 +2670,7 @@ async function fetchJson(url, options) {
   }
 
   if (!data.success) {
-    throw new Error(data.message || 'Request failed.');
+    const error = new Error(data.message || 'Request failed.'); error.status = res.status; error.data = data; throw error;
   }
 
   return data;
@@ -4814,13 +4859,14 @@ function requestActionButtonsHtml(req) {
   const ref = escapeAttribute(req.ref);
 
   const specs = [
-    ['Process',         'process', `openDocumentGenerationModal('${ref}')`, req.status === 'pending'],
-    ['Mark Ready',      'ready',   `updateReqStatus('${ref}','ready')`,     req.status === 'processing'],
-    ['Complete',        'approve', `updateReqStatus('${ref}','completed')`, req.status === 'ready'],
-    ['Notify via SMS',  'notify',  `notifyPickupReady('${ref}')`,           featureEnabled('sms') && req.status === 'ready'],
-    ['Cancel Request',  'reject',  `cancelReq('${ref}')`,                   ['pending','processing'].includes(req.status)],
-    ['Mark Paid',       'approve', `updateReqPayment('${ref}','paid')`,     req.paymentStatus === 'unpaid' && !isTerminal],
-    ['Waive',           'reject',  `updateReqPayment('${ref}','waived')`,   req.paymentStatus === 'unpaid' && !isTerminal],
+    ['Process',         'process', `openDocumentGenerationModal('${ref}',${req.rowVersion})`, req.status === 'pending'],
+    ['Mark Ready',      'ready',   `updateReqStatus('${ref}','ready','',${req.rowVersion})`,     req.status === 'processing'],
+    ['Complete',        'approve', `updateReqStatus('${ref}','completed','',${req.rowVersion})`, req.status === 'ready'],
+    ['Notify via SMS',  'notify',  `notifyPickupReady('${ref}',${req.rowVersion})`,           featureEnabled('sms') && req.status === 'ready'],
+    ['Resend SMS', 'notify', `notifyPickupReady('${ref}',${req.rowVersion},true)`, featureEnabled('sms') && req.status === 'ready' && !!req.pickupNotice],
+    ['Cancel Request',  'reject',  `cancelReq('${ref}',${req.rowVersion})`,                   ['pending','processing'].includes(req.status)],
+    ['Mark Paid',       'approve', `updateReqPayment('${ref}','paid',${req.rowVersion})`,     req.paymentStatus === 'unpaid' && !isTerminal],
+    ['Waive',           'reject',  `updateReqPayment('${ref}','waived',${req.rowVersion})`,   req.paymentStatus === 'unpaid' && !isTerminal],
   ];
 
   const buttons = specs.map(([label, cls, handler, enabled]) => {
@@ -4828,11 +4874,11 @@ function requestActionButtonsHtml(req) {
       return `<button type="button" class="btn-action ${cls}" disabled title="SMS is not configured in this build">${label}</button>`;
     }
     return enabled
-      ? `<button type="button" class="btn-action ${cls}" onclick="${handler}">${label}</button>`
+      ? `<button type="button" class="btn-action ${cls}" data-request-ref="${ref}" data-eligible="true" ${REQUEST_PENDING.has(req.ref) ? 'disabled' : ''} onclick="${handler}">${label}</button>`
       : `<button type="button" class="btn-action ${cls}" disabled>${label}</button>`;
   }).join('');
 
-  return `<div class="request-modal-actions">${buttons}</div>`;
+  return `<div class="request-modal-actions">${buttons}</div><p>Pickup SMS: ${escapeHtml(req.pickupNotice?.state || 'No notice recorded')}</p>`;
 }
 
 function showRequestDetails(requestId) {
@@ -4848,7 +4894,7 @@ function showRequestDetails(requestId) {
 
   document.getElementById('actionModalBox')?.classList.add('detail-modal-box');
   showModal('Request Details', `
-    <dl class="detail-grid request-detail-grid">
+    <dl class="detail-grid request-detail-grid" data-request-details-ref="${escapeAttribute(request.ref)}">
       ${profileDetailField('Reference Number', request.ref)}
       ${profileDetailField('Resident', request.resident)}
       ${profileDetailField('Document Type', request.type)}

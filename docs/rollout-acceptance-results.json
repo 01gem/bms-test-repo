@@ -1,0 +1,395 @@
+{
+  "status": "Closed — controlled rollout and acceptance passed",
+  "closed_at_pht": "2026-10-25T18:36:05+08:00",
+  "scope": "Local Laragon application; no external GitHub issue",
+  "backup": {
+    "directory": "C:\\laragon\\backups\\BarangayLink\\20261025-181809",
+    "sql_file": "application-paused.sql",
+    "sha256": "aa0c71ee75c01576c5c436674b10e2beeab474a331f7de7f84db6a8d5d6cdd39",
+    "restore_verified": true,
+    "documents_verified": true,
+    "restore_schema_removed": true
+  },
+  "migration": {
+    "completed_at": "2026-10-25T10:22:59+00:00",
+    "migration_sha256": "cee64268842695bf39d3b36dc6261ddf4679da266ffcb5169b5a1270f91f71b4",
+    "old_requests_preserved": 8,
+    "engines": [
+      {
+        "TABLE_NAME": "audit_log",
+        "ENGINE": "InnoDB"
+      },
+      {
+        "TABLE_NAME": "document_requests",
+        "ENGINE": "InnoDB"
+      },
+      {
+        "TABLE_NAME": "notifications",
+        "ENGINE": "InnoDB"
+      },
+      {
+        "TABLE_NAME": "request_notification_events",
+        "ENGINE": "InnoDB"
+      },
+      {
+        "TABLE_NAME": "request_operations",
+        "ENGINE": "InnoDB"
+      }
+    ],
+    "migrated_uncertain": []
+  },
+  "http_acceptance_checks": [
+    {
+      "check": "Official 1 authenticates in a distinct session",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Official 2 authenticates in a distinct session",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Activated official page references matching cache-busted frontend",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Apache serves the matching frontend bytes",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Migrated request list exposes numeric row versions",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Older cached clients cannot bypass concurrency protection",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Genuinely overlapping Apache decisions accept one and conflict the other",
+      "passed": true,
+      "detail": {
+        "authenticated_actors": [
+          3,
+          2
+        ],
+        "barrier_reached": true
+      }
+    },
+    {
+      "check": "Conflict returns the required refresh warning",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Actual Apache generation publishes PDF and moves Pending to Processing",
+      "passed": true,
+      "detail": {
+        "http_status": 200
+      }
+    },
+    {
+      "check": "Generated DOCX has designated name/reference/purpose and no unresolved placeholders",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Generated PDF content matches the designated request",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Lost-response generation retry returns the saved path without additional effects",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Mark Ready creates one readiness cycle and resident update",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Two officials queue only one initial pickup event",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Queued notification operation replay creates no second intent",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Payment preserves the readiness cycle",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Payment does not permit a new initial pickup notice",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Pending delivery blocks duplicate resends",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Completion stamps once and converts Unpaid to Paid",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Repeated completion preserves Waived, timestamp and side-effect counts",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Terminal request cannot be silently moved backward",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "No provider attempts occurred before scheduled mock dispatch",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Scheduled dispatcher sends one mocked pickup delivery",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Completed queued pickup notice is suppressed before provider dispatch",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Shared SMS log records exactly one mocked provider attempt",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Refresh/lost-response pickup retry never resends",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Completion and exact/unchanged retries do not repeat changes or notifications",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Refresh reports committed Completed/Paid state",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Original application requests and document paths remain unchanged",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Original audit_log history remains byte-equivalent",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Original notifications history remains byte-equivalent",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "All pre-existing generated documents retain their SHA256 hashes",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "Designated fixture resident is opted out before live dispatcher activation",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "No queued/sending acceptance events remain",
+      "passed": true,
+      "detail": []
+    }
+  ],
+  "http_acceptance_count": 34,
+  "browser": {
+    "distinct_official_sessions": true,
+    "required_conflict_warning_verified": true,
+    "pages_reloaded": true,
+    "matching_script": "official.js?v=1792922549",
+    "evidence": "rollout-acceptance-conflict.jpg"
+  },
+  "scheduler": {
+    "task": "BarangayLink-COPY-PickupDispatcher",
+    "cadence": "Every minute",
+    "mode": "live",
+    "runs": [
+      {
+        "startedUtc": "2026-10-25T10:28:18.8804134Z",
+        "finishedUtc": "2026-10-25T10:28:19.3540047Z",
+        "mode": "acceptance",
+        "exitCode": 0,
+        "output": [
+          "1 {\"state\":\"sent\",\"dispatched\":true}",
+          "2 {\"state\":\"skipped\",\"dispatched\":false}"
+        ]
+      },
+      {
+        "startedUtc": "2026-10-25T10:29:19.3226949Z",
+        "finishedUtc": "2026-10-25T10:29:19.6748280Z",
+        "mode": "acceptance",
+        "exitCode": 0,
+        "output": []
+      },
+      {
+        "startedUtc": "2026-10-25T10:30:18.7296798Z",
+        "finishedUtc": "2026-10-25T10:30:19.0697611Z",
+        "mode": "acceptance",
+        "exitCode": 0,
+        "output": []
+      },
+      {
+        "startedUtc": "2026-10-25T10:31:19.4286026Z",
+        "finishedUtc": "2026-10-25T10:31:19.7787696Z",
+        "mode": "acceptance",
+        "exitCode": 0,
+        "output": []
+      },
+      {
+        "startedUtc": "2026-10-25T10:32:18.3587613Z",
+        "finishedUtc": "2026-10-25T10:32:18.6848863Z",
+        "mode": "live",
+        "exitCode": 0,
+        "output": []
+      },
+      {
+        "startedUtc": "2026-10-25T10:33:18.2041736Z",
+        "finishedUtc": "2026-10-25T10:33:18.5316477Z",
+        "mode": "live",
+        "exitCode": 0,
+        "output": []
+      },
+      {
+        "startedUtc": "2026-10-25T10:34:18.2347747Z",
+        "finishedUtc": "2026-10-25T10:34:18.5527844Z",
+        "mode": "live",
+        "exitCode": 0,
+        "output": []
+      },
+      {
+        "startedUtc": "2026-10-25T10:35:18.2354705Z",
+        "finishedUtc": "2026-10-25T10:35:18.5728028Z",
+        "mode": "live",
+        "exitCode": 0,
+        "output": []
+      }
+    ],
+    "mock_provider_calls": 1,
+    "real_carrier_acceptance_tested": false
+  },
+  "designated_records": {
+    "prefix": "ROLLOUT-20261025-102618",
+    "request_ids": {
+      "DOC": 9,
+      "RACE": 10,
+      "WAIVED": 11,
+      "OBSOLETE": 12
+    },
+    "resident_id": 1102,
+    "temporary_official_ids": [
+      2,
+      3
+    ],
+    "accounts_deactivated": true,
+    "fixture_sms_opt_out": true
+  },
+  "final_database": {
+    "requests": [
+      {
+        "id": 9,
+        "reference_no": "ROLLOUT-20261025-102618-DOC",
+        "status": "completed",
+        "payment_status": "paid",
+        "row_version": 5,
+        "readiness_cycle": 1,
+        "generated_document_path": "generated_documents/0fb5d265-ae09-457b-a669-e18229b4e89b.pdf"
+      },
+      {
+        "id": 10,
+        "reference_no": "ROLLOUT-20261025-102618-RACE",
+        "status": "ready",
+        "payment_status": "paid",
+        "row_version": 3,
+        "readiness_cycle": 1,
+        "generated_document_path": null
+      },
+      {
+        "id": 11,
+        "reference_no": "ROLLOUT-20261025-102618-WAIVED",
+        "status": "completed",
+        "payment_status": "waived",
+        "row_version": 2,
+        "readiness_cycle": 1,
+        "generated_document_path": null
+      },
+      {
+        "id": 12,
+        "reference_no": "ROLLOUT-20261025-102618-OBSOLETE",
+        "status": "completed",
+        "payment_status": "paid",
+        "row_version": 2,
+        "readiness_cycle": 1,
+        "generated_document_path": null
+      }
+    ],
+    "outbox": [
+      {
+        "id": 1,
+        "request_id": 9,
+        "state": "sent"
+      },
+      {
+        "id": 2,
+        "request_id": 12,
+        "state": "skipped"
+      }
+    ],
+    "pending_operations": [
+      {
+        "n": 0
+      }
+    ],
+    "active_fixture_officials": [
+      {
+        "id": 2,
+        "status": "inactive"
+      },
+      {
+        "id": 3,
+        "status": "inactive"
+      }
+    ],
+    "original_total_counts": {
+      "requests": 12,
+      "audits": 68,
+      "resident_notifications": 44
+    }
+  },
+  "generated_pdf": "generated_documents/0fb5d265-ae09-457b-a669-e18229b4e89b.pdf",
+  "cleanup": {
+    "temporary_pause_removed": true,
+    "temporary_cookie_jars_removed": true,
+    "temporary_password_removed": true,
+    "temporary_acceptance_runners_removed": true,
+    "backup_restore_schema_removed": true,
+    "regression_tests_retained": true,
+    "backups_and_valid_documents_retained": true
+  }
+}

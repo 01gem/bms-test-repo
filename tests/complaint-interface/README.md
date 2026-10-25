@@ -30,6 +30,9 @@ Application database row counts are compared before and after the run.
 The existing PHP runner requires local MySQL and its configured Laragon binaries.
 It replaces earlier `capstone_fix24_*` disposable schemas and writes temporary
 server/session configuration to `tests/review-2026-10-24/server.json`.
+The generated file is Git-ignored and contains temporary session cookies. The
+tracked `server.example.json` documents its shape without credentials; it is not
+a working configuration. Run the suite to generate real disposable-session values.
 Do not commit that generated configuration. Its server is left running for manual
 browser checks; stop that specific PHP server when finished.
 

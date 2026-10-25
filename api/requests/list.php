@@ -36,6 +36,20 @@ if ($officialSession) {
 }
 $rows = db_query_all($stmt);
 $stmt->close();
+session_write_close();
+foreach ($rows as &$row) {
+  $row['row_version'] = (int)$row['row_version'];
+  unset($row['generation_token'], $row['generation_expires_at']);
+}
+unset($row);
+if ($officialSession) {
+  require_once __DIR__ . '/_workflow.php';
+  $events = request_rows($db, 'SELECT e.request_id,e.state,e.created_at,e.sequence_no FROM request_notification_events e JOIN (SELECT request_id,MAX(id) AS id FROM request_notification_events GROUP BY request_id) latest ON latest.id=e.id');
+  $byRequest = [];
+  foreach ($events as $event) $byRequest[(int)$event['request_id']] = $event;
+  foreach ($rows as &$row) $row['pickup_notice'] = $byRequest[(int)$row['id']] ?? null;
+  unset($row);
+}
 
 json_success(['requests' => $rows]);
 ?>
