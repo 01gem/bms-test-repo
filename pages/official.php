@@ -232,10 +232,6 @@ if (count($officialNameParts) >= 2) {
                   <input type="radio" name="household_mode" value="link" />
                   <span><strong>Link to an existing household</strong><small>Choose a household from the list below.</small></span>
                 </label>
-                <label class="wz-choice">
-                  <input type="radio" name="household_mode" value="skip" />
-                  <span><strong>Skip for now</strong><small>Link this resident to a household later.</small></span>
-                </label>
               </div>
 
               <div class="wz-household-pane" data-pane="new">

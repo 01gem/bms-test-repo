@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS `residents` (
   `failed_logins` INT NOT NULL DEFAULT 0,
   `locked_until` DATETIME NULL DEFAULT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  `household_id` INT NULL,
+  `household_id` INT NOT NULL,
   `relationship_to_household_head` VARCHAR(50) NULL,
   `profile_status` ENUM('unprofiled','in_progress','complete') NOT NULL DEFAULT 'unprofiled',
   PRIMARY KEY (`id`),
@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS `households` (
 
 ALTER TABLE `residents`
   ADD CONSTRAINT `fk_resident_household` FOREIGN KEY (`household_id`)
-    REFERENCES `households`(`id`) ON DELETE SET NULL;
+    REFERENCES `households`(`id`) ON DELETE RESTRICT;
 
 -- ----------------------------------------------------------------------------
 -- household_profiles

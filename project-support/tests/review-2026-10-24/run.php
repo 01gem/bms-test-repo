@@ -349,11 +349,17 @@ try {
   exec_sql($db, 'INSERT INTO barangay_officials (fname,lname,username,role,address,contact,password,position,status) VALUES (?,?,?,?,?,?,?,?,?)',
     'sssssssss', ['Sam', 'Staff', 'fix-staff', 'staff', 'Purok 2', '+639171110003', $hash, 'Clerk', 'active']);
   $staff = (int)$db->insert_id;
-  exec_sql($db, 'INSERT INTO residents (fname,lname,username,address,contact,password,status) VALUES (?,?,?,?,?,?,?)',
-    'sssssss', ['Rae', 'Resident', 'fix-resident', 'Purok 1', '+639171110004', $hash, 'active']);
+  exec_sql($db, 'INSERT INTO households (household_code,address,purok_zone,household_size) VALUES (?,?,?,?)',
+    'sssi', ['HH-FIX-0001', 'Purok 1', 'Purok 1', 1]);
+  $residentHousehold = (int)$db->insert_id;
+  exec_sql($db, 'INSERT INTO households (household_code,address,purok_zone,household_size) VALUES (?,?,?,?)',
+    'sssi', ['HH-FIX-0002', 'Purok 2', 'Purok 2', 1]);
+  $otherHousehold = (int)$db->insert_id;
+  exec_sql($db, 'INSERT INTO residents (fname,lname,username,address,contact,password,status,household_id,relationship_to_household_head) VALUES (?,?,?,?,?,?,?,?,?)',
+    'sssssssis', ['Rae', 'Resident', 'fix-resident', 'Purok 1', '+639171110004', $hash, 'active', $residentHousehold, 'Head']);
   $resident = (int)$db->insert_id;
-  exec_sql($db, 'INSERT INTO residents (fname,lname,username,address,contact,password,status) VALUES (?,?,?,?,?,?,?)',
-    'sssssss', ['Ott', 'Other', 'fix-other', 'Purok 2', '+639171110005', $hash, 'active']);
+  exec_sql($db, 'INSERT INTO residents (fname,lname,username,address,contact,password,status,household_id,relationship_to_household_head) VALUES (?,?,?,?,?,?,?,?,?)',
+    'sssssssis', ['Ott', 'Other', 'fix-other', 'Purok 2', '+639171110005', $hash, 'active', $otherHousehold, 'Head']);
   $other = (int)$db->insert_id;
   exec_sql($db, 'INSERT INTO complaints (resident_id,reference_no,resident_name,category,severity,location_text,description,date_filed,status,official_note,is_public) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
     'isssssssssi', [$resident, 'FIX-OWN', 'Rae Resident', 'Noise / Public Disturbance', 'low', 'Purok 1', 'Owned complaint', 'Oct 24, 2026', 'open', '', 0]);

@@ -127,6 +127,11 @@ an engine bug, not a data bug.
   upgrade scripts live in `project-support/migrations/`. If upgrading a database built with the old `migration_*.sql`
   chain, apply those migrations once before deleting them; then
   `database.sql` becomes the fresh-install entry point.
+- Existing databases must also apply
+  `project-support/migrations/20261025_resident_households.sql`. It assigns
+  each orphan resident to a new household before making `residents.household_id`
+  mandatory. Back up the database first and stop resident writes while applying
+  the migration.
 - Document-specific extra fields (e.g. civil_status for Barangay
   Clearance) are captured at request time in
   `document_requests.request_fields_json` and pre-fill the official

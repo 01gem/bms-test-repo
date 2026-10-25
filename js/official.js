@@ -3997,7 +3997,7 @@ function initResidentCreateForm() {
   openBtn?.addEventListener('click', () => {
     resetToCreateMode();
     card.classList.add('show');
-    loadHouseholds().catch(() => { /* dropdown stays empty; "Skip" and "Create" still work */ });
+    loadHouseholds().catch(() => { /* dropdown stays empty; creating a new household still works */ });
   });
   closeBtn?.addEventListener('click', closeForm);
   cancelBtn?.addEventListener('click', closeForm);
@@ -4007,7 +4007,7 @@ function initResidentCreateForm() {
     const invalid = [...visible.querySelectorAll('input,select,textarea')].find(input => !input.disabled && !input.checkValidity());
     if (invalid) { invalid.reportValidity(); return; }
     if (step === 2 && householdMode() === 'link' && !form.household_id.value) {
-      showToastAdmin('Select a Household', 'Choose an existing household, or pick another option.');
+      showToastAdmin('Select a Household', 'Choose an existing household, or create a new household.');
       form.household_id.focus();
       return;
     }

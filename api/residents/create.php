@@ -48,11 +48,14 @@ if (count($rows) > 0) {
 // household_mode:
 //   'new'  — create a household, this resident becomes its head.
 //   'link' — attach to an existing household_id.
-//   'skip' — no linkage (default; resident stays unprofiled).
+// Every resident must be linked immediately. Use 'new' to create a household
+// or 'link' to attach the resident to an existing household.
 // profile_status is intentionally not set here — the DB default 'unprofiled' applies
 // until the household workflows promote it.
-$householdMode = (string)($input['household_mode'] ?? 'skip');
-if (!in_array($householdMode, ['new', 'link', 'skip'], true)) $householdMode = 'skip';
+$householdMode = (string)($input['household_mode'] ?? 'new');
+if (!in_array($householdMode, ['new', 'link'], true)) {
+  json_error('Every resident must belong to a household. Create a new household or select an existing one.', 422);
+}
 
 $householdId = null;
 $relationshipToHead = trim((string)($input['relationship_to_household_head'] ?? '')) ?: null;
