@@ -660,7 +660,10 @@ async function generateAndPreviewDocument() {
   const previewWrap = document.getElementById('docGenPreviewWrap');
   const previewFrame = document.getElementById('docGenPreviewFrame');
   if (button) button.disabled = true;
-  if (previewEmpty) { previewEmpty.textContent = 'Generating document...'; previewEmpty.style.display = 'flex'; }
+  if (previewEmpty) {
+    previewEmpty.innerHTML = '<span class="docgen-loading" role="status" aria-live="polite"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i><span>Generating document...</span></span>';
+    previewEmpty.style.display = 'flex';
+  }
   try {
     const data = await requestAction('generate_document', request.ref, { id: request.id, fields, expected_version: request.rowVersion });
     if (!data) return;
