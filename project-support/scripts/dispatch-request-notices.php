@@ -5,6 +5,7 @@ try {
     $db = get_db();
     request_exec($db, 'SET SESSION innodb_lock_wait_timeout=3');
     request_recover($db);
+    request_retry_failed($db);
     // Explicit human reconciliation; never queues a new provider call.
     if (($argv[1] ?? '') === 'reconcile') {
         $id = filter_var($argv[2] ?? '', FILTER_VALIDATE_INT);
@@ -18,7 +19,7 @@ try {
         });
         echo "Reconciled {$id}.\n"; exit;
     }
-    foreach (request_rows($db, "SELECT id FROM request_notification_events WHERE state='queued' ORDER BY id LIMIT 50") as $row) {
+    foreach (request_rows($db, "SELECT id FROM request_notification_events WHERE state='queued' ORDER BY id LIMIT 20") as $row) {
         echo $row['id'] . ' ' . request_encode(request_dispatch($db, (int)$row['id'])) . "\n";
     }
 } catch (Throwable $e) { fwrite(STDERR, $e->getMessage() . "\n"); exit(1); }

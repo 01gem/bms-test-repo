@@ -220,6 +220,55 @@ function request_endpoint(string $action): void {
                 $payload[$key] = $input[$key] ?? false;
             }
         }
-        request_reply(request_mutate(get_db(), $actor, $action, $payload));
+        $result = request_mutate(get_db(), $actor, $action, $payload);
+
+        // Best-effort inline dispatch for pickup notices: turns the visible wait
+        // from the dispatcher's 1-minute cadence into one provider call. The
+        // scheduled dispatcher remains as the retry net if this fails. Set
+        // BARANGAYLINK_DISABLE_INLINE_DISPATCH=1 to force queue-only mode (used by
+        // the request-concurrency regression suite).
+        if ($action === 'notify'
+            && $result[0] === 200
+            && ($result[1]['sms_status'] ?? '') === 'queued'
+            && !empty($result[1]['event_id'])
+            && function_exists('request_dispatch')
+            && getenv('BARANGAYLINK_DISABLE_INLINE_DISPATCH') !== '1') {
+            try {
+                $inline = request_dispatch(get_db(), (int)$result[1]['event_id']);
+                if (isset($inline['state'])) {
+                    $result[1]['sms_status'] = $inline['state'];
+                    $inlineReason = isset($inline['reason']) && is_string($inline['reason']) ? trim($inline['reason']) : '';
+                    $result[1]['message'] = match ($inline['state']) {
+                        'sent'      => 'Pickup notice sent.',
+                        'skipped'   => 'Pickup notice recorded; ' . ($inlineReason !== '' ? $inlineReason : 'SMS skipped.'),
+                        'failed'    => 'Pickup notice recorded but SMS failed. The scheduler will retry up to four times with backoff; ' . ($inlineReason !== '' ? $inlineReason : 'check sms_log for the provider reason.'),
+                        'uncertain' => 'Pickup notice recorded. ' . ($inlineReason !== '' ? $inlineReason : 'Delivery is uncertain; the scheduler will reconcile.'),
+                        default     => (string)($result[1]['message'] ?? 'Pickup notice queued.'),
+                    };
+                }
+                // Record the delivery outcome on the operator's audit trail.
+                // request_queue_notice() already wrote "Queued pickup notification";
+                // this row records whether the inline attempt succeeded, failed,
+                // was skipped, or left the event uncertain.
+                if (function_exists('log_audit') && isset($inline['state'])) {
+                    log_audit(
+                        get_db(),
+                        (int)$actor['id'],
+                        (string)$actor['name'],
+                        'Pickup SMS ' . (string)$inline['state'],
+                        'document_request',
+                        (string)$payload['reference_no'],
+                        'Event ' . (int)$result[1]['event_id']
+                          . '; state ' . (string)$inline['state']
+                          . ($inlineReason !== '' ? '; ' . $inlineReason : '')
+                    );
+                }
+            } catch (Throwable $inlineError) {
+                // Notice is already queued; the scheduled dispatcher will handle it.
+                error_log('Inline pickup dispatch failed: ' . $inlineError->getMessage());
+            }
+        }
+
+        request_reply($result);
     } catch (Throwable $e) { request_reply(request_problem_result($e)); }
 }

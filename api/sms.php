@@ -56,8 +56,8 @@ function send_sms(string $to, string $content): array {
       'Content-Length: ' . strlen($payload),
     ],
     CURLOPT_POSTFIELDS => $payload,
-    CURLOPT_CONNECTTIMEOUT => 10,
-    CURLOPT_TIMEOUT => 25,
+    CURLOPT_CONNECTTIMEOUT => 5,
+    CURLOPT_TIMEOUT => 10,
   ]);
   $response = curl_exec($ch);
   $curlError = $response === false ? curl_error($ch) : '';

@@ -138,6 +138,46 @@ The cap remains best effort across requests; a strict global reservation scheme
 was outside the requested narrow shared-SMS change. The event ledger is the durable
 request-specific delivery state even when the shared log is unavailable.
 
+## Inline pickup dispatch and retry policy
+
+`request_endpoint('notify')` claims the queued event durably, then performs
+one synchronous `request_dispatch()` inline so the operator sees the delivery
+outcome in the same HTTP response instead of waiting for the next scheduler
+tick. `BARANGAYLINK_DISABLE_INLINE_DISPATCH=1` forces queue-only mode (used
+by `project-support/tests/request-concurrency/run.php`).
+
+If inline dispatch fails, `request_notification_events.state` becomes
+`failed`. The scheduled dispatcher requeues failed events according to a
+`retry_count` column added by
+`project-support/migrations/20261026_request_notification_retry.sql`:
+
+| retry_count at failure | next requeue after |
+| --- | --- |
+| 0 | 5 minutes |
+| 1 | 15 minutes |
+| 2 | 60 minutes |
+| 3 | 180 minutes |
+| 4 | never (manual reconciliation) |
+
+Total elapsed time across all retries is ~4h20m from the original attempt
+(original + 4 requeues = 5 dispatcher attempts). Order in a dispatcher run:
+`request_recover()` → `request_retry_failed()` → drain `queued`.
+
+`uncertain` events are **not** touched by `request_retry_failed()`. They are
+handled by `request_recover()` (120-second lease expiry) or by CLI reconcile
+(`php project-support/scripts/dispatch-request-notices.php reconcile EVENT_ID sent|failed "..."`).
+
+Every inline delivery outcome is recorded on `audit_log` with action
+`Pickup SMS <state>` and the event ID in `details`. The queueing row
+(`Queued pickup notification`) is written earlier by
+`request_queue_notice()`; the two audit rows together describe the whole
+lifecycle of one attempt.
+
+The UI "Resend SMS" button was removed; a resident-facing resend still exists
+server-side (`updateReqStatus('...', ...)` never queues one, but the
+dispatcher's `reconcile` subcommand and the `notify_ready` endpoint with
+`{"resend": true}` remain available for operators).
+
 ## Executed verification
 
 The development suites below used disposable schemas and CLI workers. The later

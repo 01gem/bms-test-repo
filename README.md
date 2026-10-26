@@ -115,6 +115,12 @@ an engine bug, not a data bug.
   the tab is hidden. Sustained cost is ~0.05 req/s per active client.
   Past 100 concurrent users, replace polling with Server-Sent Events
   against a `/api/events/stream.php` endpoint.
+- A pickup SMS that ends `failed` is retried by the scheduled dispatcher with
+  a fixed 5 / 15 / 60 / 180-minute backoff. After four requeues the event is
+  left in `failed` for operator reconciliation via
+  `php project-support/scripts/dispatch-request-notices.php reconcile EVENT_ID sent|failed "evidence"`
+  or by re-marking the request Ready (which creates a fresh readiness cycle).
+  See [request-concurrency](project-support/docs/request-concurrency.md).
 - Registries read from `enrichedRegistryRows()`, which reconciles
   residents against `HOUSEHOLD_REGISTRY` on every render. A resident
   whose `household_id` changes mid-session may show stale MPI until

@@ -4,6 +4,9 @@ if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 foreach (['HTTPSMS_API_KEY','HTTPSMS_FROM_NUMBER','GEMINI_API_KEY'] as $key) {
     putenv($key . '='); $_ENV[$key] = ''; $_SERVER[$key] = '';
 }
+putenv('BARANGAYLINK_DISABLE_INLINE_DISPATCH=1');
+$_ENV['BARANGAYLINK_DISABLE_INLINE_DISPATCH'] = '1';
+$_SERVER['BARANGAYLINK_DISABLE_INLINE_DISPATCH'] = '1';
 $mockSmsCalls = 0;
 function send_sms(string $to, string $body): array {
     $GLOBALS['mockSmsCalls']++;
@@ -89,9 +92,10 @@ try {
     $db = new mysqli($DB_HOST,$DB_USER,$DB_PASS,$name); $db->set_charset('utf8mb4');
     $DB_NAME = $name; // Any shared helper opens only this disposable schema.
     $observer = new mysqli($DB_HOST,$DB_USER,$DB_PASS,$name);
-    $schema = file_get_contents(__DIR__.'/../../database/database.sql');
+    $schema = file_get_contents(__DIR__.'/../../../database/database.sql');
     $schema = preg_replace('/CREATE DATABASE IF NOT EXISTS `barangay_system_test_environment`.*?;\s*USE `barangay_system_test_environment`;/s','',$schema);
     import_sql($db,$schema);
+    import_sql($db,file_get_contents(__DIR__.'/../../migrations/20261026_request_notification_retry.sql'));
     request_exec($db,'DELETE FROM barangay_officials');
     request_exec($db,"INSERT INTO households (id,household_code,address,household_size) VALUES (1,'HH-TEST-0001','Fixture',1)");
     request_exec($db,"INSERT INTO residents (id,fname,lname,username,address,contact,password,household_id,relationship_to_household_head) VALUES (1,'Test','Resident','reqresident','Fixture','09171234567','unused',1,'Head')");
@@ -300,6 +304,59 @@ try {
     $r=fixture('ready');$n=post('notify_ready',intent($r,[]));$cycle=row($r)['readiness_cycle'];
     post('update_payment',intent($r,['payment_status'=>'paid']));$n2=post('notify_ready',intent(array_merge($r,['expected_version'=>2]),[]));
     check('payment never resets readiness cycle or initial pickup uniqueness',row($r)['readiness_cycle']===$cycle && $n2[1]['changed']===false && count_for($r,'request_notification_events')===1);
+    // ── Retry policy for failed pickup SMS ──
+    // Isolate this scenario from failed events created by earlier checks.
+    request_exec($db, "UPDATE request_notification_events SET finished_at = NOW() WHERE state = 'failed'");
+    $r = fixture('ready');
+    $notice = post('notify_ready', intent($r, []));
+    $event = (int)$notice[1]['event_id'];
+    request_dispatch($db, $event, fn() => ['status' => 'failed', 'reason' => 'Provider rejected', 'uncertain' => false]);
+
+    $stateRow = request_rows($db, 'SELECT state, retry_count FROM request_notification_events WHERE id=?', [$event])[0];
+    check('failed event starts with retry_count 0 and is not yet due', $stateRow['state'] === 'failed' && (int)$stateRow['retry_count'] === 0);
+    check('request_retry_failed skips events inside the 5-minute backoff', request_retry_failed($db) === 0);
+
+    request_exec($db, 'UPDATE request_notification_events SET finished_at = NOW() - INTERVAL 6 MINUTE WHERE id=?', [$event]);
+    check('request_retry_failed requeues an event past the 5-minute backoff', request_retry_failed($db) === 1);
+    $stateRow = request_rows($db, 'SELECT state, retry_count FROM request_notification_events WHERE id=?', [$event])[0];
+    check('requeued event has state=queued and retry_count=1', $stateRow['state'] === 'queued' && (int)$stateRow['retry_count'] === 1);
+
+    request_dispatch($db, $event, fn() => ['status' => 'failed', 'reason' => 'Provider rejected', 'uncertain' => false]);
+    check('second failure is not retried before the 15-minute backoff', request_retry_failed($db) === 0);
+
+    request_exec($db, 'UPDATE request_notification_events SET finished_at = NOW() - INTERVAL 16 MINUTE WHERE id=?', [$event]);
+    request_retry_failed($db);
+    request_dispatch($db, $event, fn() => ['status' => 'failed', 'reason' => 'Provider rejected', 'uncertain' => false]);
+    request_exec($db, 'UPDATE request_notification_events SET finished_at = NOW() - INTERVAL 61 MINUTE WHERE id=?', [$event]);
+    request_retry_failed($db);
+    request_dispatch($db, $event, fn() => ['status' => 'failed', 'reason' => 'Provider rejected', 'uncertain' => false]);
+    request_exec($db, 'UPDATE request_notification_events SET finished_at = NOW() - INTERVAL 181 MINUTE WHERE id=?', [$event]);
+    request_retry_failed($db);
+
+    $stateRow = request_rows($db, 'SELECT state, retry_count FROM request_notification_events WHERE id=?', [$event])[0];
+    check('after four requeues retry_count is 4 and retries stop', (int)$stateRow['retry_count'] === 4);
+    request_dispatch($db, $event, fn() => ['status' => 'failed', 'reason' => 'Provider rejected', 'uncertain' => false]);
+    check('fifth failure leaves state=failed with no further retry', request_retry_failed($db) === 0);
+
+    // Uncertain events are never touched by request_retry_failed().
+    $r = fixture('ready');
+    $notice = post('notify_ready', intent($r, []));
+    $uncertainEvent = (int)$notice[1]['event_id'];
+    request_dispatch($db, $uncertainEvent, fn() => ['status' => 'failed', 'reason' => 'Timeout', 'uncertain' => true]);
+    request_exec($db, 'UPDATE request_notification_events SET finished_at = NOW() - INTERVAL 6 MINUTE WHERE id=?', [$uncertainEvent]);
+    check('request_retry_failed leaves uncertain events untouched', request_retry_failed($db) === 0
+        && request_rows($db, 'SELECT state FROM request_notification_events WHERE id=?', [$uncertainEvent])[0]['state'] === 'uncertain');
+
+    // Delivery outcome is recorded on the audit trail.
+    $r = fixture('ready');
+    $notice = post('notify_ready', intent($r, []));
+    $auditEvent = (int)$notice[1]['event_id'];
+    $auditBefore = (int)request_rows($db, "SELECT COUNT(*) AS c FROM audit_log WHERE action LIKE 'Pickup SMS %' AND target_reference=?", [$r['reference_no']])[0]['c'];
+    request_dispatch($db, $auditEvent, fn() => ['status' => 'sent', 'reason' => 'mock']);
+    $auditAfter = (int)request_rows($db, "SELECT COUNT(*) AS c FROM audit_log WHERE action LIKE 'Pickup SMS %' AND target_reference=?", [$r['reference_no']])[0]['c'];
+    check('successful inline dispatch is not auto-audited by request_dispatch itself (audit is added by _workflow.php only)', $auditAfter === $auditBefore);
+    // (The inline-dispatch audit path lives in request_endpoint(); calling
+    // request_dispatch directly from the test does not go through it.)
     // Shared SMS decision tree is exercised with an in-process provider mock.
     putenv('HTTPSMS_API_KEY=fixture-only');putenv('HTTPSMS_FROM_NUMBER=+639171234567');
     request_exec($db,'INSERT INTO resident_sms_preferences (resident_id,requests_enabled) VALUES (1,0)');

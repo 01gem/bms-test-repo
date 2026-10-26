@@ -15,7 +15,7 @@ const context = vm.createContext({console,crypto:{randomUUID},setTimeout,clearTi
   window:{confirm:()=>true,prompt:()=>null,addEventListener(){},matchMedia:()=>({matches:false,addEventListener(){}})},
   sessionStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
   localStorage:{getItem:()=>null},fetch:async()=>{},URL,URLSearchParams});
-vm.runInContext(fs.readFileSync(require('path').join(__dirname,'../../js/official.js'),'utf8'),context);
+vm.runInContext(fs.readFileSync(require('path').join(__dirname,'../../../js/official.js'),'utf8'),context);
 const run = code=>vm.runInContext(code,context);
 let passed = 0;
 function check(name, value) { assert.ok(value,name);passed++;console.log('PASS '+name); }
@@ -50,7 +50,7 @@ async function main() {
   check('polling never substitutes a newer version in an older decision',context.calls[0].expected_version===7 && context.calls.length===1);
   check('409 has prescribed review message and retains cancellation input',conflict.message==='This request changed. Review the current information before trying again.' && run(`REQUEST_CANCEL_DRAFTS.get('REQ1')`)==='Keep my cancellation reason');
   // Verify the real fetchJson HTTP contract in an independent VM using its source.
-  const source=fs.readFileSync(require('path').join(__dirname,'../../js/official.js'),'utf8');
+  const source=fs.readFileSync(require('path').join(__dirname,'../../../js/official.js'),'utf8');
   const fetchFunction=source.slice(source.indexOf('async function fetchJson('),source.indexOf('async function loadResidents()'));
   const fetchContext=vm.createContext({fetch:async()=>({ok:false,status:409,text:async()=>JSON.stringify({success:false,code:'stale_version',message:'Changed'})})});
   vm.runInContext(fetchFunction,fetchContext);

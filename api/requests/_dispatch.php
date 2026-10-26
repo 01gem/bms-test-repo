@@ -16,7 +16,13 @@ function request_dispatch(mysqli $db, int $eventId, ?callable $deliver = null): 
         request_exec($db, "UPDATE request_notification_events SET state='sending',claimed_at=NOW() WHERE id=?", [$eventId]);
         $e['claimed'] = true; return $e;
     });
-    if (empty($event['claimed'])) return ['state' => $event['state'], 'dispatched' => false];
+    if (empty($event['claimed'])) {
+        return [
+            'state' => $event['state'],
+            'reason' => (string)($event['reason'] ?? ''),
+            'dispatched' => false,
+        ];
+    }
     try {
         $result = $deliver ? $deliver($event) : notify_resident((int)$event['resident_id'], 'request_pickup_ready', $event['message'], 'requests_enabled', $event['contact']);
         $state = $result['status'] ?? 'uncertain';
@@ -28,8 +34,12 @@ function request_dispatch(mysqli $db, int $eventId, ?callable $deliver = null): 
         error_log('Pickup delivery exception: ' . $e->getMessage());
     }
     request_exec($db, "UPDATE request_notification_events SET state=?,reason=?,finished_at=NOW() WHERE id=? AND state='sending'", [$state, mb_substr($reason, 0, 255), $eventId]);
-    $recorded = request_rows($db, 'SELECT state FROM request_notification_events WHERE id=?', [$eventId])[0]['state'];
-    return ['state' => $recorded, 'dispatched' => true];
+    $recorded = request_rows($db, 'SELECT state, reason FROM request_notification_events WHERE id=?', [$eventId])[0];
+    return [
+        'state' => $recorded['state'],
+        'reason' => (string)($recorded['reason'] ?? ''),
+        'dispatched' => true,
+    ];
 }
 
 function request_recover(mysqli $db): void {
@@ -47,4 +57,53 @@ function request_recover(mysqli $db): void {
             request_finish($db, $op['operation_id'], [409, ['success' => false, 'code' => 'recovered_operation', 'message' => 'An abandoned operation was recovered. Review the request before a new action.']]);
         });
     }
+}
+
+/**
+ * Requeue transient pickup-SMS failures for another dispatcher attempt.
+ *
+ * Backoff per retry_count value:
+ *   0 -> wait 5 min   (first retry after the original failure)
+ *   1 -> wait 15 min
+ *   2 -> wait 60 min
+ *   3 -> wait 180 min
+ * After retry_count reaches 4 the row stays in `failed` for operator
+ * reconciliation; this function never requeues it again.
+ *
+ * Only `state='failed'` rows are considered. `uncertain` rows are handled
+ * by `request_recover()` (lease expiry) or by CLI reconcile.
+ *
+ * @return int Number of events requeued.
+ */
+function request_retry_failed(mysqli $db): int {
+    $requeued = 0;
+    $rows = request_rows(
+        $db,
+        "SELECT id FROM request_notification_events
+          WHERE state = 'failed'
+            AND retry_count < 4
+            AND finished_at IS NOT NULL
+            AND finished_at < NOW() - INTERVAL
+                CASE retry_count
+                  WHEN 0 THEN 5
+                  WHEN 1 THEN 15
+                  WHEN 2 THEN 60
+                  ELSE 180
+                END MINUTE
+          ORDER BY id
+          LIMIT 20"
+    );
+    foreach ($rows as $row) {
+        $stmt = request_sql(
+            $db,
+            "UPDATE request_notification_events
+                SET state = 'queued', retry_count = retry_count + 1
+              WHERE id = ? AND state = 'failed' AND retry_count < 4",
+            [(int)$row['id']]
+        );
+        $changed = $db->affected_rows;
+        $stmt->close();
+        if ($changed === 1) $requeued++;
+    }
+    return $requeued;
 }

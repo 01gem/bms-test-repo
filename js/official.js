@@ -446,13 +446,40 @@ function requestDetailIsOpen(ref) {
   const detail = document.getElementById('actionModalBox')?.querySelector?.('[data-request-details-ref]');
   return !!modal?.classList.contains('show') && detail?.dataset.requestDetailsRef === ref;
 }
+// UUID v4 for the request-operation idempotency key.
+// crypto.randomUUID() is only defined in secure contexts (HTTPS, localhost,
+// 127.0.0.1, *.localhost) and only in browsers from ~2022 onward. When the
+// official panel is opened over plain HTTP on a LAN IP or a Laragon *.test
+// host, it is undefined and every official mutation throws before it reaches
+// the network. crypto.getRandomValues() is available in insecure contexts,
+// so build the UUID from that; Math.random is only a last-resort conforming
+// fallback. Output always matches _workflow.php::request_contract()'s regex.
+function generateOperationId() {
+  const c = (typeof window !== 'undefined' && window.crypto) || null;
+  if (c && typeof c.randomUUID === 'function') {
+    return c.randomUUID();
+  }
+  if (c && typeof c.getRandomValues === 'function') {
+    const bytes = new Uint8Array(16);
+    c.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xx
+    const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' + hex.slice(12, 16) +
+           '-' + hex.slice(16, 20) + '-' + hex.slice(20);
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, ch => {
+    const r = (Math.random() * 16) | 0;
+    return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 async function requestAction(endpoint, ref, payload) {
   if (REQUEST_PENDING.has(ref)) return null;
   if (!Number.isInteger(payload.expected_version) || payload.expected_version < 1) throw new Error('Reopen this request to review its current information.');
   const key = requestIntentKey(endpoint, payload);
   let intent = requestStoredIntent(key);
   if (!intent) {
-    intent = { ...payload, operation_id: crypto.randomUUID() };
+    intent = { ...payload, operation_id: generateOperationId() };
     REQUEST_RETRIES.set(key, intent);
     try { sessionStorage.setItem('request-intent:' + key, JSON.stringify(intent)); } catch { /* in-memory retry remains available */ }
   }
@@ -4493,10 +4520,17 @@ function initAnnouncementForm() {
       closeForm();
       e.target.reset();
       if (broadcastResult) {
-        showToastAdmin(
-          'Announcement Posted',
-          `SMS sent: ${broadcastResult.sent}; skipped: ${broadcastResult.skipped}; failed: ${broadcastResult.failed}.`
-        );
+        if (broadcastResult.started) {
+          showToastAdmin(
+            'Announcement Posted',
+            `SMS broadcast started for ${broadcastResult.total} resident${broadcastResult.total === 1 ? '' : 's'}. Delivery continues in the background.`
+          );
+        } else {
+          showToastAdmin(
+            'Announcement Posted',
+            `SMS sent: ${broadcastResult.sent}; skipped: ${broadcastResult.skipped}; failed: ${broadcastResult.failed}.`
+          );
+        }
       } else {
         showToastAdmin('Announcement Posted', 'Announcement posted successfully.');
       }
@@ -4895,7 +4929,6 @@ function requestActionButtonsHtml(req) {
     ['Mark Ready',      'ready',   `updateReqStatus('${ref}','ready','',${req.rowVersion})`,     req.status === 'processing'],
     ['Complete',        'approve', `updateReqStatus('${ref}','completed','',${req.rowVersion})`, req.status === 'ready'],
     ['Notify via SMS',  'notify',  `notifyPickupReady('${ref}',${req.rowVersion})`,           featureEnabled('sms') && req.status === 'ready'],
-    ['Resend SMS', 'notify', `notifyPickupReady('${ref}',${req.rowVersion},true)`, featureEnabled('sms') && req.status === 'ready' && !!req.pickupNotice],
     ['Cancel Request',  'reject',  `cancelReq('${ref}',${req.rowVersion})`,                   ['pending','processing'].includes(req.status)],
     ['Mark Paid',       'approve', `updateReqPayment('${ref}','paid',${req.rowVersion})`,     req.paymentStatus === 'unpaid' && !isTerminal],
     ['Waive',           'reject',  `updateReqPayment('${ref}','waived',${req.rowVersion})`,   req.paymentStatus === 'unpaid' && !isTerminal],
