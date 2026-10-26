@@ -627,6 +627,8 @@ async function initComplaintComments(root, complaintId) {
   const button = form.querySelector('button[type="submit"]');
   const status = root.querySelector('[data-comment-status]');
   let busy = true;
+  let pollTimer = null;
+  let pollInflight = false;
   const refresh = async () => {
     const comments = await loadComplaintComments(complaintId);
     if (root.isConnected) {
@@ -634,6 +636,31 @@ async function initComplaintComments(root, complaintId) {
       updateResidentCommentCount(root, comments.length);
     }
   };
+  const stopPolling = () => {
+    if (pollTimer !== null) clearInterval(pollTimer);
+    pollTimer = null;
+    document.removeEventListener('visibilitychange', pollOnVisibilityChange);
+    delete root._commentPollingCleanup;
+  };
+  const poll = async () => {
+    if (!root.isConnected) {
+      stopPolling();
+      return;
+    }
+    if (document.visibilityState !== 'visible' || busy || pollInflight) return;
+    pollInflight = true;
+    try {
+      await refresh();
+    } catch (error) {
+      if (root.isConnected && !busy) status.textContent = error.message || 'Live comment updates are temporarily unavailable.';
+    } finally {
+      pollInflight = false;
+    }
+  };
+  const pollOnVisibilityChange = () => {
+    if (document.visibilityState === 'visible') poll();
+  };
+  root._commentPollingCleanup = stopPolling;
   form.addEventListener('submit', async event => {
     event.preventDefault();
     if (busy || !root.isConnected) return;
@@ -697,6 +724,8 @@ async function initComplaintComments(root, complaintId) {
     if (root.isConnected) {
       busy = false;
       button.disabled = false;
+      pollTimer = setInterval(poll, 5000);
+      document.addEventListener('visibilitychange', pollOnVisibilityChange);
     }
   }
 }
@@ -1385,6 +1414,7 @@ function residentComplaintCanClose(discard = false) {
 function releaseResidentComplaintDialog() {
   const state = residentComplaintDialog;
   if (!state) return;
+  state.box.querySelector('[data-complaint-comments]')?._commentPollingCleanup?.();
   document.removeEventListener('keydown', state.keyHandler, true);
   window.removeEventListener('beforeunload', state.unloadHandler);
   document.body.style.overflow = state.oldOverflow;

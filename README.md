@@ -110,9 +110,12 @@ an engine bug, not a data bug.
 - Generated documents carry a static placeholder signatory
   (`Hon. Erwin Astronomo`). There is no designated-signing-official
   concept yet. Known product gap, not a bug.
-- Polling uses a 20-second interval, section-scoped, with exponential
-  backoff to 2 minutes on failure and paused while a modal is open or
-  the tab is hidden. Sustained cost is ~0.05 req/s per active client.
+- Background list polling uses a 5-second interval, section-scoped, with
+  exponential backoff to 2 minutes on failure and paused while a modal is
+  open or the tab is hidden. Open complaint dialogs poll their comments every
+  5 seconds and pause while the tab is hidden. Background list polling costs
+  ~0.2 req/s per active client; an open complaint adds one comments request
+  every 5 seconds.
   Past 100 concurrent users, replace polling with Server-Sent Events
   against a `/api/events/stream.php` endpoint.
 - A pickup SMS that ends `failed` is retried by the scheduled dispatcher with
