@@ -1,6 +1,15 @@
 <?php
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
-require_once __DIR__ . '/../api/requests/_dispatch.php';
+
+// The script lives at project-support/scripts/ in the source tree but at
+// <root>/scripts/ after build-deployment.py flattens it. Both layouts have
+// db.php at the project root, so probe for it once and use the answer as the
+// anchor for every relative path below.
+$projectRoot = is_file(dirname(__DIR__, 2) . '/db.php')
+    ? dirname(__DIR__, 2)   // source:   project-support/scripts/  → project root
+    : dirname(__DIR__);     // deployed: scripts/                 → project root
+
+require_once $projectRoot . '/api/requests/_dispatch.php';
 try {
     $db = get_db();
     request_exec($db, 'SET SESSION innodb_lock_wait_timeout=3');

@@ -95,7 +95,6 @@ try {
     $schema = file_get_contents(__DIR__.'/../../../database/database.sql');
     $schema = preg_replace('/CREATE DATABASE IF NOT EXISTS `barangay_system_test_environment`.*?;\s*USE `barangay_system_test_environment`;/s','',$schema);
     import_sql($db,$schema);
-    import_sql($db,file_get_contents(__DIR__.'/../../migrations/20261026_request_notification_retry.sql'));
     request_exec($db,'DELETE FROM barangay_officials');
     request_exec($db,"INSERT INTO households (id,household_code,address,household_size) VALUES (1,'HH-TEST-0001','Fixture',1)");
     request_exec($db,"INSERT INTO residents (id,fname,lname,username,address,contact,password,household_id,relationship_to_household_head) VALUES (1,'Test','Resident','reqresident','Fixture','09171234567','unused',1,'Head')");
