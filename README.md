@@ -148,6 +148,25 @@ an engine bug, not a data bug.
   generator computes it fresh from birthdate when the modal left age
   blank.
 
+## Release notes
+
+### 2026-10-26
+
+- **Announcement in-app notifications are now independent of SMS opt-out.**
+  Residents who disabled announcement SMS now still receive in-app
+  announcement notifications. The "Announcements" checkbox on the resident
+  profile page suppresses only the SMS channel.
+- **Pickup SMS retries.** A failed pickup SMS is retried by the scheduler up
+  to four times (5 / 15 / 60 / 180 minutes, ~4h20m total from the original
+  attempt). After the fourth retry the event stays `failed` for operator
+  reconciliation. The panel message now says "will retry up to four times
+  with backoff" instead of the earlier incorrect "the scheduler will retry."
+- **`database.sql` now includes `request_notification_events.retry_count`.**
+  Fresh installs no longer need to apply
+  `project-support/migrations/20261026_request_notification_retry.sql` after
+  `database.sql`; existing installs still do. See
+  `project-support/docs/request-concurrency.md`.
+
 ## Document request concurrency rollout
 
 Existing installations must apply the additive request migration before enabling

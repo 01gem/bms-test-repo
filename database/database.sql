@@ -543,12 +543,14 @@ CREATE TABLE request_notification_events (
   message TEXT NOT NULL,
   state ENUM('queued','sending','sent','skipped','failed','uncertain') NOT NULL DEFAULT 'queued',
   reason VARCHAR(255) NOT NULL DEFAULT '',
+  retry_count TINYINT UNSIGNED NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   claimed_at DATETIME NULL,
   finished_at DATETIME NULL,
   UNIQUE KEY request_cycle_notice (request_id, readiness_cycle, sequence_no),
   UNIQUE KEY notification_operation (operation_id),
   KEY notification_dispatch (state, id),
+  KEY notification_retry (state, retry_count, finished_at),
   CONSTRAINT fk_notice_request FOREIGN KEY (request_id) REFERENCES document_requests(id),
   CONSTRAINT fk_notice_operation FOREIGN KEY (operation_id) REFERENCES request_operations(operation_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
