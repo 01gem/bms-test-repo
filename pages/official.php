@@ -27,15 +27,25 @@ $isOfficialAdmin = ($_SESSION['official_role'] ?? '') === 'admin';
 $officialName = trim((string)($_SESSION['official_name'] ?? ''));
 $officialRole = trim((string)($_SESSION['official_role'] ?? ''));
 $officialPosition = trim((string)($_SESSION['official_position'] ?? ''));
+$officialUsername = '';
+$officialAddress = '';
+$officialContact = '';
+$officialStatus = '';
+$officialCreatedAt = '';
 $officialProfilePhoto = '';
 $officialDb = get_db();
-$officialPhotoStmt = $officialDb->prepare('SELECT profile_photo FROM barangay_officials WHERE id = ? LIMIT 1');
+$officialPhotoStmt = $officialDb->prepare('SELECT username, address, contact, status, created_at, profile_photo FROM barangay_officials WHERE id = ? LIMIT 1');
 if ($officialPhotoStmt) {
   $officialId = (int)$_SESSION['official_id'];
   $officialPhotoStmt->bind_param('i', $officialId);
   $officialPhotoStmt->execute();
   $officialPhotoResult = $officialPhotoStmt->get_result();
   if ($officialPhotoResult && ($officialPhotoRow = $officialPhotoResult->fetch_assoc())) {
+    $officialUsername = (string)($officialPhotoRow['username'] ?? '');
+    $officialAddress = (string)($officialPhotoRow['address'] ?? '');
+    $officialContact = (string)($officialPhotoRow['contact'] ?? '');
+    $officialStatus = (string)($officialPhotoRow['status'] ?? '');
+    $officialCreatedAt = (string)($officialPhotoRow['created_at'] ?? '');
     $officialProfilePhoto = (string)($officialPhotoRow['profile_photo'] ?? '');
   }
   $officialPhotoStmt->close();
@@ -547,7 +557,7 @@ if (count($officialNameParts) >= 2) {
           </div>
           <div class="table-wrap">
             <table class="data-table" id="officialsTable">
-              <thead><tr><th>ID</th><th>Full Name</th><th>Username</th><th>Contact</th><th>Position</th><th>Role</th><th>Status</th><th class="action-column">Actions</th></tr></thead>
+              <thead><tr><th>ID</th><th>Full Name</th><th>Username</th><th>Contact</th><th>Address</th><th>Position</th><th>Role</th><th>Status</th><th class="action-column">Actions</th></tr></thead>
               <tbody id="officialsBody"></tbody>
             </table>
           </div>
@@ -872,6 +882,12 @@ if (count($officialNameParts) >= 2) {
               <div class="field"><label>Name</label><div class="profile-readonly"><?= e($officialName) ?></div></div>
               <div class="field"><label>Position</label><div class="profile-readonly"><?= e($officialPosition !== '' ? $officialPosition : '—') ?></div></div>
               <div class="field"><label>Role</label><div class="profile-readonly"><?= e($officialRoleLabel) ?></div></div>
+              <div class="field"><label>Username</label><div class="profile-readonly"><?= e($officialUsername !== '' ? $officialUsername : '—') ?></div></div>
+              <div class="field"><label>Contact</label><div class="profile-readonly"><?= e($officialContact !== '' ? $officialContact : '—') ?></div></div>
+              <div class="field"><label>Address</label><div class="profile-readonly"><?= e($officialAddress !== '' ? $officialAddress : '—') ?></div></div>
+              <div class="field"><label>Account Status</label><div class="profile-readonly"><?= e($officialStatus !== '' ? ucfirst($officialStatus) : '—') ?></div></div>
+              <div class="field"><label>Account ID</label><div class="profile-readonly"><?= e((string)$_SESSION['official_id']) ?></div></div>
+              <div class="field"><label>Account Created</label><div class="profile-readonly"><?= e($officialCreatedAt !== '' ? date('F j, Y', strtotime($officialCreatedAt)) : '—') ?></div></div>
             </div>
           </div>
         </div>

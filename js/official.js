@@ -4238,7 +4238,8 @@ function mapOfficialRow(row) {
     address: row.address || '',
     position: row.position || '-',
     role: row.role || 'staff',
-    status: row.status || 'active'
+    status: row.status || 'active',
+    createdAt: row.created_at || ''
   };
 }
 
@@ -4254,6 +4255,7 @@ function renderOfficials(data) {
       <td style="font-weight:600;color:var(--text)">${o.name}</td>
       <td>${o.username}</td>
       <td>${o.contact}</td>
+      <td>${o.address}</td>
       <td>${o.position}</td>
       <td><span class="status-badge" style="background:var(--surface-2);color:var(--text-2)">${o.role}</span></td>
       <td><span class="status-badge status-${o.status === 'active' ? 'verified' : 'suspended'}">${o.status}</span></td>
