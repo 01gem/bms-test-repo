@@ -564,6 +564,11 @@ if (count($officialNameParts) >= 2) {
             <select class="table-filter" id="auditActionFilter">
               <option value="all">All Actions</option>
             </select>
+            <?php if ($isOfficialAdmin): ?>
+            <select class="table-filter" id="auditOfficialFilter">
+              <option value="all">All Staff/Admins</option>
+            </select>
+            <?php endif; ?>
           </div>
           <div class="table-wrap">
             <table class="data-table">

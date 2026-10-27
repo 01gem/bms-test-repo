@@ -2658,7 +2658,7 @@ function mapAuditRow(row) {
   return {
     ts: row.created_at || '',
     user: row.official_name || 'Unknown Official',
-    role: 'Official',
+    role: row.official_role || 'Official',
     action: row.action || 'Action',
     module: row.target_type || '-',
     ip: row.target_reference || '-'
@@ -4716,8 +4716,16 @@ async function loadServices() {
 }
 
 async function loadAuditLog() {
-  const data = await fetchJson(`${API_BASE}/audit/list.php`);
+  const officialFilter = document.getElementById('auditOfficialFilter');
+  const selectedOfficial = officialFilter?.value || 'all';
+  const query = window.IS_OFFICIAL_ADMIN && selectedOfficial !== 'all'
+    ? `?official_id=${encodeURIComponent(selectedOfficial)}`
+    : '';
+  const data = await fetchJson(`${API_BASE}/audit/list.php${query}`);
   AUDIT_LOG = (data.logs || []).map(mapAuditRow);
+  if (window.IS_OFFICIAL_ADMIN && Array.isArray(data.officials)) {
+    populateAuditOfficialFilter(data.officials);
+  }
   renderAuditLog();
 }
 function resetServiceForm() {
@@ -4826,6 +4834,18 @@ function populateAuditActionFilter() {
   if (actions.includes(current)) select.value = current;
 }
 
+function populateAuditOfficialFilter(officials) {
+  const select = document.getElementById('auditOfficialFilter');
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = '<option value="all">All Staff/Admins</option>'
+    + officials.map(official => {
+      const name = `${official.fname || ''} ${official.lname || ''}`.trim() || 'Unknown Official';
+      return `<option value="${Number(official.id)}">${escapeHtml(name)} (${escapeHtml(official.role || 'staff')})</option>`;
+    }).join('');
+  if ([...select.options].some(option => option.value === current)) select.value = current;
+}
+
 function renderAuditLogFiltered() {
   const searchEl = document.getElementById('auditSearch');
   const filterEl = document.getElementById('auditActionFilter');
@@ -4863,6 +4883,7 @@ function renderAuditLog() {
 function initAuditLog() {
   document.getElementById('auditSearch')?.addEventListener('input', renderAuditLogFiltered);
   document.getElementById('auditActionFilter')?.addEventListener('change', renderAuditLogFiltered);
+  document.getElementById('auditOfficialFilter')?.addEventListener('change', loadAuditLog);
 }
 
  
@@ -4956,19 +4977,21 @@ function showResidentProfile(dbId) {
 function requestActionButtonsHtml(req) {
   const isTerminal = req.status === 'completed' || req.status === 'cancelled';
   const ref = escapeAttribute(req.ref);
+  const hasPickupNotice = Boolean(req.pickupNotice);
+  const notifyLabel = hasPickupNotice ? 'Notify via SMS Again' : 'Notify via SMS';
 
   const specs = [
     ['Process',         'process', `openDocumentGenerationModal('${ref}',${req.rowVersion})`, req.status === 'pending'],
-    ['Mark Ready',      'ready',   `updateReqStatus('${ref}','ready','',${req.rowVersion})`,     req.status === 'processing'],
-    ['Complete',        'approve', `updateReqStatus('${ref}','completed','',${req.rowVersion})`, req.status === 'ready'],
-    ['Notify via SMS',  'notify',  `notifyPickupReady('${ref}',${req.rowVersion})`,           featureEnabled('sms') && req.status === 'ready'],
+    ['Mark Ready',       'ready',   `updateReqStatus('${ref}','ready','',${req.rowVersion})`,     req.status === 'processing'],
+    ['Complete',        'approve', `updateReqStatus('${ref}','completed','',${req.rowVersion})`,  req.status === 'ready'],
+    [notifyLabel,        'notify',  `notifyPickupReady('${ref}',${req.rowVersion},${hasPickupNotice})`, featureEnabled('sms') && req.status === 'ready'],
     ['Cancel Request',  'reject',  `cancelReq('${ref}',${req.rowVersion})`,                   ['pending','processing'].includes(req.status)],
     ['Mark Paid',       'approve', `updateReqPayment('${ref}','paid',${req.rowVersion})`,     req.paymentStatus === 'unpaid' && !isTerminal],
     ['Waive',           'reject',  `updateReqPayment('${ref}','waived',${req.rowVersion})`,   req.paymentStatus === 'unpaid' && !isTerminal],
   ];
 
   const buttons = specs.map(([label, cls, handler, enabled]) => {
-    if (label === 'Notify via SMS' && !featureEnabled('sms')) {
+    if (label.startsWith('Notify via SMS') && !featureEnabled('sms')) {
       return `<button type="button" class="btn-action ${cls}" disabled title="SMS is not configured in this build">${label}</button>`;
     }
     return enabled

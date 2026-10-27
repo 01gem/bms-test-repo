@@ -19,20 +19,44 @@ if (empty($_SESSION['official_id'])) {
 $db = get_db();
 
 $officialRole = (string)($_SESSION['official_role'] ?? '');
-$query = 'SELECT id, official_id, official_name, action, target_type, target_reference, details, created_at FROM audit_log';
-if ($officialRole === 'staff') {
-  $query .= ' WHERE official_id = ?';
+$selectedOfficialId = null;
+if ($officialRole === 'admin' && isset($_GET['official_id']) && $_GET['official_id'] !== '') {
+  $selectedOfficialId = filter_var($_GET['official_id'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+  if ($selectedOfficialId === false) json_error('Invalid official filter.', 422);
 }
-$query .= ' ORDER BY created_at DESC, id DESC';
+
+$query = 'SELECT a.id, a.official_id, a.official_name, COALESCE(o.role, \'system\') AS official_role,
+                 a.action, a.target_type, a.target_reference, a.details, a.created_at
+          FROM audit_log a
+          LEFT JOIN barangay_officials o ON o.id = a.official_id';
+$params = [];
+$types = '';
+if ($officialRole === 'staff') {
+  $query .= ' WHERE a.official_id = ?';
+  $params[] = (int)$_SESSION['official_id'];
+  $types .= 'i';
+} elseif ($selectedOfficialId !== null) {
+  $query .= ' WHERE a.official_id = ?';
+  $params[] = (int)$selectedOfficialId;
+  $types .= 'i';
+}
+$query .= ' ORDER BY a.created_at DESC, a.id DESC';
 
 $stmt = $db->prepare($query);
 if (!$stmt) json_error('Failed to prepare audit log query.', 500);
-if ($officialRole === 'staff') {
-  $officialId = (int)$_SESSION['official_id'];
-  $stmt->bind_param('i', $officialId);
+if ($params) {
+  $stmt->bind_param($types, ...$params);
 }
 $rows = db_query_all($stmt);
 $stmt->close();
 
-json_success(['logs' => $rows]);
+$officials = [];
+if ($officialRole === 'admin') {
+  $officialStmt = $db->prepare('SELECT id, fname, lname, role FROM barangay_officials ORDER BY fname ASC, lname ASC, id ASC');
+  if (!$officialStmt) json_error('Failed to prepare official filter query.', 500);
+  $officials = db_query_all($officialStmt);
+  $officialStmt->close();
+}
+
+json_success(['logs' => $rows, 'officials' => $officials]);
 ?>
